@@ -63,8 +63,19 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/kvm.h>
 
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/syscalls.h>
+#include <linux/fs.h>
+#include <linux/fcntl.h>
+
+
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
+
+/*used to count the number of vm's*/
+int numbervm = 0;
 
 /* Architectures should define their poll value according to the halt latency */
 static unsigned int halt_poll_ns = KVM_HALT_POLL_NS_DEFAULT;
@@ -118,6 +129,8 @@ __visible bool kvm_rebooting;
 EXPORT_SYMBOL_GPL(kvm_rebooting);
 
 static bool largepages_enabled = true;
+/* new ksm */
+struct file *flip = NULL;
 
 bool kvm_is_reserved_pfn(pfn_t pfn)
 {
@@ -541,10 +554,101 @@ static void kvm_free_memslots(struct kvm *kvm, struct kvm_memslots *slots)
 	kvfree(slots);
 }
 
+/*for new ksm*/
+static unsigned long long get_gpa(struct kvm_memslots *slots, int number, unsigned long long hva)
+{
+        int i;
+	unsigned long long gpa = 0;
+        for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
+		
+		if(slots->memslots[i].npages == 0)/*Just search those slots which gfn is not 0.*/
+			continue;
+
+		unsigned long long slotuser = slots->memslots[i].userspace_addr >> 12;
+		unsigned long long slotnpage = slots->memslots[i].npages;
+
+		if(hva >= slotuser && hva < (slotuser + slotnpage))
+		{
+			gpa = (hva - slotuser) + slots->memslots[i].base_gfn;
+			return gpa;
+		}
+		//printk("%d %llu %lu %lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
+
+        }
+	
+	return gpa;
+}
+
+static void print_slots(struct kvm_memslots *slots, int number)
+{
+	int i;
+	for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
+		if(slots->memslots[i].npages == 0) continue;
+		
+		printk("%d %llu %lu %lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
+	}
+}
+
+/*void print_File(struct file *filp, int number, long long base_gfn, long userspace_addr, long npages)
+{
+	mm_segment_t old_fs = get_fs();
+	set_fs(KERNEL_DS);
+		
+	char buf0[1000] = "";
+	char buf1[100] = "";
+	char buf2[100] = "";
+	char buf3[100] = "";
+	char blank[2] = " ";
+	char nextline[2] = "\n";
+	sprintf(buf0, "%d", number);
+	sprintf(buf1, "%llu", base_gfn);
+	sprintf(buf2, "%lu", userspace_addr);
+	sprintf(buf3, "%lu", npages);
+	
+	strcat(buf0, blank);
+	strcat(buf0, buf1);
+	strcat(buf0, blank);
+	strcat(buf0, buf2);
+	strcat(buf0, blank);
+	strcat(buf0, buf3);
+	strcat(buf0, nextline);
+	
+	vfs_write(filp, buf0, strlen(buf0), &filp->f_pos);
+
+	set_fs(old_fs);
+}*/
+/*test code 2*/
+/*static void kvm_mem_slot_print(struct kvm *kvm)
+{	
+	struct kvm_memslots *slots;
+	struct kvm_memory_slot *memslot;
+	int i;
+	for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+		slots = __kvm_memslots(kvm, i);
+		kvm_for_each_memslot(memslot, slots) {
+			unsigned long hva_start, hva_end;
+			gfn_t gfn_start, gfn_end;
+			hva_start = memslot->userspace_addr;
+			hva_end = memslot->userspace_addr + (memslot->npages << PAGE_SHIFT);
+			if(hva_start >= hva_end)
+				continue;
+
+			gfn_start = hva_to_gfn_memslot(hva_start, memslot);
+			gfn_end = hva_to_gfn_memslot(hva_end + PAGE_SIZE - 1, memslot);
+
+			printk("%lx - %lx, %llu - %llu\n", hva_start, hva_end, gfn_start, gfn_end);
+		}
+	}
+}*/
+
+
 static struct kvm *kvm_create_vm(unsigned long type)
 {
 	int r, i;
 	struct kvm *kvm = kvm_arch_alloc_vm();
+
+	/* new ksm */
+	numbervm++;
 
 	if (!kvm)
 		return ERR_PTR(-ENOMEM);
@@ -631,6 +735,55 @@ void *kvm_kvzalloc(unsigned long size)
 		return kzalloc(size, GFP_KERNEL);
 }
 
+/*for new ksm*/
+unsigned long long kvm_hva_to_gpa(unsigned long long hva, int *ritemnumber)
+{
+	struct kvm *kvm_list;
+	unsigned long long gpa = 0;
+	//unsigned long long findgpa = 0;
+	int number, correct = 0;
+	int i;
+	//printk("VMs: %d\n", number);
+        
+	list_for_each_entry(kvm_list, &vm_list, vm_list) {
+                //printk("number: %d\n", number);
+		number = numbervm - correct;
+		
+                for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+                	gpa = get_gpa(kvm_list->memslots[i], number, hva);
+			if(gpa != 0)
+			{ 
+				//findgpa = gpa;
+				*ritemnumber = number;
+				return gpa;
+			}
+                }
+                correct++;
+        }
+	
+	//printk("VMs %d\n", number);
+	//if(findgpa != 0) 
+	//	return findgpa;
+	//else
+	return gpa;
+}
+
+void kvm_used_memory_slots(void) //used in ksm
+{
+	struct kvm *kvm_list;
+	int i;
+	int number, correct = 0;
+	
+	list_for_each_entry(kvm_list, &vm_list, vm_list) {
+		
+		number = numbervm - correct;
+		for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+			print_slots(kvm_list->memslots[i], number);			
+		}
+		correct++;
+	}
+}
+
 static void kvm_destroy_devices(struct kvm *kvm)
 {
 	struct list_head *node, *tmp;
@@ -653,6 +806,10 @@ static void kvm_destroy_vm(struct kvm *kvm)
 	spin_lock(&kvm_lock);
 	list_del(&kvm->vm_list);
 	spin_unlock(&kvm_lock);
+
+	/* new ksm */
+	numbervm--;
+
 	kvm_free_irq_routing(kvm);
 	for (i = 0; i < KVM_NR_BUSES; i++) {
 		if (kvm->buses[i])
@@ -3381,9 +3538,38 @@ int kvm_io_bus_register_dev(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 }
 
 /* Caller must hold slots_lock. */
-void kvm_io_bus_unregister_dev(struct kvm *kvm, enum kvm_bus bus_idx,
+int kvm_io_bus_unregister_dev(struct kvm *kvm, enum kvm_bus bus_idx,
 			       struct kvm_io_device *dev)
 {
+	int i, r;
+	struct kvm_io_bus *new_bus, *bus;
+
+	bus = kvm->buses[bus_idx];
+	r = -ENOENT;
+	for (i = 0; i < bus->dev_count; i++)
+		if (bus->range[i].dev == dev) {
+			r = 0;
+			break;
+		}
+
+	if (r)
+		return r;
+
+	new_bus = kmalloc(sizeof(*bus) + ((bus->dev_count - 1) *
+			  sizeof(struct kvm_io_range)), GFP_KERNEL);
+	if (!new_bus)
+		return -ENOMEM;
+
+	memcpy(new_bus, bus, sizeof(*bus) + i * sizeof(struct kvm_io_range));
+	new_bus->dev_count--;
+	memcpy(new_bus->range + i, bus->range + i + 1,
+	       (new_bus->dev_count - i) * sizeof(struct kvm_io_range));
+
+	rcu_assign_pointer(kvm->buses[bus_idx], new_bus);
+	synchronize_srcu_expedited(&kvm->srcu);
+	kfree(bus);
+	return r;
+/*
 	int i;
 	struct kvm_io_bus *new_bus, *bus;
 
@@ -3416,6 +3602,7 @@ broken:
 	synchronize_srcu_expedited(&kvm->srcu);
 	kfree(bus);
 	return;
+*/
 }
 
 static struct notifier_block kvm_cpu_notifier = {
