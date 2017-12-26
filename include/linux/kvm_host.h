@@ -176,7 +176,7 @@ enum kvm_bus {
 
 /* new ksm */
 void kvm_used_memory_slots(void);
-unsigned long long kvm_hva_to_gpa(unsigned long long hva, int *ritemnumber);
+unsigned long kvm_hva_to_gfn(unsigned long hva, int *ritemnumber);
 
 
 int kvm_io_bus_write(struct kvm_vcpu *vcpu, enum kvm_bus bus_idx, gpa_t addr,

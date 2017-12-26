@@ -555,28 +555,27 @@ static void kvm_free_memslots(struct kvm *kvm, struct kvm_memslots *slots)
 }
 
 /*for new ksm*/
-static unsigned long long get_gpa(struct kvm_memslots *slots, int number, unsigned long long hva)
+static unsigned long get_gfn(struct kvm_memslots *slots, int number, unsigned long hva)
 {
-        int i;
-	unsigned long long gpa = 0;
-        for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
+    int i;
+	unsigned long gfn = 0;
+    for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
 		
 		if(slots->memslots[i].npages == 0)/*Just search those slots which gfn is not 0.*/
 			continue;
 
-		unsigned long long slotuser = slots->memslots[i].userspace_addr >> 12;
-		unsigned long long slotnpage = slots->memslots[i].npages;
+		unsigned long slotuser = slots->memslots[i].userspace_addr >> 12;
+		unsigned long slotnpage = slots->memslots[i].npages;
 
 		if(hva >= slotuser && hva < (slotuser + slotnpage))
 		{
-			gpa = (hva - slotuser) + slots->memslots[i].base_gfn;
-			return gpa;
+			gfn = (hva - slotuser) + slots->memslots[i].base_gfn;
+			return gfn;
 		}
 		//printk("%d %llu %lu %lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
 
-        }
-	
-	return gpa;
+    }
+	return gfn;
 }
 
 static void print_slots(struct kvm_memslots *slots, int number)
@@ -736,10 +735,10 @@ void *kvm_kvzalloc(unsigned long size)
 }
 
 /*for new ksm*/
-unsigned long long kvm_hva_to_gpa(unsigned long long hva, int *ritemnumber)
+unsigned long kvm_hva_to_gfn(unsigned long hva, int *ritemnumber)
 {
 	struct kvm *kvm_list;
-	unsigned long long gpa = 0;
+	unsigned long gfn = 0;
 	//unsigned long long findgpa = 0;
 	int number, correct = 0;
 	int i;
@@ -749,23 +748,23 @@ unsigned long long kvm_hva_to_gpa(unsigned long long hva, int *ritemnumber)
                 //printk("number: %d\n", number);
 		number = numbervm - correct;
 		
-                for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
-                	gpa = get_gpa(kvm_list->memslots[i], number, hva);
-			if(gpa != 0)
+		for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+			gfn = get_gfn(kvm_list->memslots[i], number, hva);
+			if(gfn != 0)
 			{ 
 				//findgpa = gpa;
 				*ritemnumber = number;
-				return gpa;
+				return gfn;
 			}
-                }
-                correct++;
-        }
+		}
+        correct++;
+    }
 	
 	//printk("VMs %d\n", number);
 	//if(findgpa != 0) 
 	//	return findgpa;
 	//else
-	return gpa;
+	return gfn;
 }
 
 void kvm_used_memory_slots(void) //used in ksm
