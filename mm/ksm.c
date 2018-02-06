@@ -41,6 +41,7 @@
 #include <linux/time.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
+#include "table.h"
 
 #ifdef CONFIG_NUMA
 #define NUMA(x)		(x)
@@ -161,6 +162,7 @@ struct hotzone {
 	unsigned long gfn;
 	int vm1;
 	int vm2;
+	int sum;
 	int count;
 	struct rb_node node;
 };
@@ -220,7 +222,10 @@ unsigned long ksm_time = 0;
 unsigned long break_time = 0;
 int time_flag = 0;
 
-int print1 = 0;
+int hit = 0; 
+int skip = 0;
+
+int print_vma = 0;
 
 #define SEQNR_MASK	0x0ff	/* low bits of unstable tree seqnr */
 #define UNSTABLE_FLAG	0x100	/* is a node of the unstable tree */
@@ -391,8 +396,8 @@ static DEFINE_SPINLOCK(ksm_mmlist_lock);
 		sizeof(struct __struct), __alignof__(struct __struct),\
 		(__flags), NULL)
 
-static struct file *filp = NULL;
-
+//static struct file *filp = NULL;
+/*
 static struct file *open_file(char *filename)
 {
 	struct file *filp;
@@ -445,6 +450,7 @@ static void handle_file(struct file *filpr, unsigned long scan_round, unsigned l
 		write_file(filp, hva, gpa, number);
 
 }
+*/
 
 static int __init ksm_slab_init(void)
 {
@@ -864,6 +870,7 @@ static void remove_rmap_item_from_tree(struct rmap_item *rmap_item)
 		 */
 		age = (unsigned char)(ksm_scan.seqnr - rmap_item->address);
 		/* for debugging purpose */
+		/*
 		if(age > 1) {
 			printk("BEFORE: round = %lu, address = %x, gfn = %lu, age = %x\n",
 			 ksm_scan.seqnr, rmap_item->address, rmap_item->gfn, age);
@@ -874,9 +881,10 @@ static void remove_rmap_item_from_tree(struct rmap_item *rmap_item)
 			 printk("After: round = %lu, address = %x, gfn = %lu, age = %x\n",
 			 ksm_scan.seqnr, rmap_item->address, rmap_item->gfn, age);
 		}
-		// else if(!age) {
-		// 	printk("Normal status: round = %lu, address = %x\n", ksm_scan.seqnr, rmap_item->address);
-		// }
+		else if(!age) {
+			printk("Normal status: round = %lu, address = %x\n", ksm_scan.seqnr, rmap_item->address);
+		}
+		*/
 		BUG_ON(age > 1);
 		if (!age)
 			rb_erase(&rmap_item->node,
@@ -1708,6 +1716,61 @@ static void vm12_record(struct rmap_item *rmap_item)
 
 }
 
+static void hz_record(struct rmap_item *rmap_item)
+{
+	struct rb_root *root;
+	struct rb_node **new;
+	struct rb_node *parent = NULL;
+	struct hotzone *hotzone;
+
+	root = hot_zone_table;
+	new = &root->rb_node;
+
+	while(*new)
+	{
+		hotzone = rb_entry(*new, struct hotzone, node);
+		parent = *new;
+		if(rmap_item->gfn > hotzone->gfn)
+			new = &parent->rb_right;
+		else if(rmap_item->gfn < hotzone->gfn)
+			new = &parent->rb_left;
+		else
+		{
+			// if(rmap_item->number == 1)
+			// 	hotzone->vm1 = ksm_scan.seqnr;
+			// else if(rmap_item->number == 2)
+			// 	hotzone->vm2 = ksm_scan.seqnr;
+			hotzone->sum += rmap_item->number;
+			hotzone->count++;
+			// TODO: do better log here.
+			if(hotzone->count == 2)
+				hz_size++;
+
+			return;
+		}
+	}
+
+	hotzone = kmalloc(sizeof(struct hotzone), GFP_KERNEL);
+	hotzone->count = 1;
+	hotzone->gfn = rmap_item->gfn;
+	hotzone->sum = rmap_item->number;
+	/*
+	if(rmap_item->number == 1)
+	{
+		hotzone->vm1 = ksm_scan.seqnr;
+		hotzone->vm2 = 0;
+	}
+	else if(rmap_item->number == 2)
+	{
+		hotzone->vm1 = 0;
+		hotzone->vm2 = ksm_scan.seqnr;
+	}
+	*/
+	/* new = hotzone->node */
+	rb_link_node(&hotzone->node, parent, new);
+	rb_insert_color(&hotzone->node, root);
+}
+
 /*
  * cmp_and_merge_page - first see if page can be merged into the stable tree;
  * if not, compare checksum to previous and if it's the same, see if page can
@@ -1757,9 +1820,9 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * add its rmap_item to the stable tree.
 			 */
 			// HZ ksm
-			if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
+			//if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
 				/* update struct hotzone's properties */
-				vm12_record(rmap_item);
+				//vm12_record(rmap_item);
 			// ------------------
 			lock_page(kpage);
 			/* add rmap_item into stable tree node's rmap_hlist */
@@ -1794,12 +1857,14 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * The pages were successfully merged: insert new
 			 * node in the stable tree and add both rmap_items.
 			 */
+			/*
 			if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
 			{
 				//printk("rmap(number gpa): %d %llu  tree(number gpa): %d %llu\n", rmap_item->number, rmap_item->gfn, tree_rmap_item->number, tree_rmap_item->gfn);
 				vm12_record(rmap_item);
 				vm12_record(tree_rmap_item);
 			}
+			*/
 			//printk("rmap: %d %llu  tree: %d %llu\n", rmap_item->number, rmap_item->gfn, tree_rmap_item->number, tree_rmap_item->gfn);
 			lock_page(kpage);
 			stable_node = stable_tree_insert(kpage);
@@ -1876,6 +1941,7 @@ static void hotzone_show(void)
 	printk("Finished dumping hotzone information.\n");
 }
 
+struct vm_area_struct *last_vma = NULL;
 static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 {
 	struct mm_struct *mm;
@@ -1888,7 +1954,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		return NULL;
 
 	slot = ksm_scan.mm_slot;
-	// only happened at like first iteration.
+	// flush unstable tree .
 	if (slot == &ksm_mm_head) {
 		/*
 		 * A number of pages can hang around indefinitely on per-cpu
@@ -1932,7 +1998,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		 * done by list_entry
 		 */
 		slot = list_entry(slot->mm_list.next, struct mm_slot, mm_list);
-		/* update the cursor. */
+		/* change to another VM */
 		ksm_scan.mm_slot = slot;
 		spin_unlock(&ksm_mmlist_lock);
 		/*
@@ -1942,6 +2008,9 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		if (slot == &ksm_mm_head)
 			return NULL;
 next_mm:
+		printk("==========NEXT MM==========\n");
+		printk("VMA count of this mm = %d\n", slot->mm->map_count);
+		/* update cursor */
 		ksm_scan.address = 0;
 		ksm_scan.rmap_list = &slot->rmap_list;
 	}
@@ -1952,16 +2021,21 @@ next_mm:
 		vma = NULL;
 	else
 		vma = find_vma(mm, ksm_scan.address);
+		if(vma != last_vma) {
+			last_vma = vma;
+			printk("VMA start = %lu, end = %lu\n", vma->vm_start >> 12, vma->vm_end >> 12);
+		}
 
 	for (; vma; vma = vma->vm_next) {
 		if (!(vma->vm_flags & VM_MERGEABLE))
 			continue;
+		/* find the next vma and set the address */
 		if (ksm_scan.address < vma->vm_start)
 			ksm_scan.address = vma->vm_start;
 		/* ksm only scan anonymous pages */
 		if (!vma->anon_vma)
 			ksm_scan.address = vma->vm_end;
-
+		/* search through current vma */
 		while (ksm_scan.address < vma->vm_end) {
 			if (ksm_test_exit(mm))
 				break;
@@ -1973,7 +2047,6 @@ next_mm:
 			}
 			if (PageAnon(*page) ||
 			    page_trans_compound_anon(*page)) {
-				// this function does nothing 
 				flush_anon_page(vma, *page, ksm_scan.address);
 				flush_dcache_page(*page);
 				rmap_item = get_next_rmap_item(slot,
@@ -2034,39 +2107,26 @@ next_mm:
 	if (slot != &ksm_mm_head)
 		goto next_mm;
 
-	/* one round is finished */
-	ksm_scan.seqnr++;
-	/* dumping hotzone information */
-	// if(ksm_scan.seqnr > 0)  {
-	// 	printk("Start dumping hotzone information in hotzone_show() after round %d :\n", ksm_scan.seqnr-1);
-	// 	hotzone_show();	/* print out the hotzone table */
-	// }
+	ksm_scan.seqnr++;	/* one round is finished */
+	time_flag = 1;
+	// define_prescan = 0;
+	hz_size = 0;
 
-	printk("(potential) hotzone size in round #%d: %d\n", ksm_scan.seqnr-1, hz_size);
+	/* dumping hotzone information */
+	/*
+	if(ksm_scan.seqnr > 0)  {
+		printk("Start dumping hotzone information in hotzone_show() after round %d :\n", ksm_scan.seqnr-1);
+		hotzone_show();	
+	}
+	*/
+
+	printk("(potential) hotzone size in round #%lu: %d\n", ksm_scan.seqnr-1, hz_size);
 	printk("total rmap_item in hotzone: %d\n", total_rmap);
 
-	//printk("hot zone size: %d\n", hotzone_used);
-/*	int two = 0;
-	int ii;
-	for(ii = 0; ii < hotzone_used; ii++)
-	{
-		if(hztable[ii].count == 2)
-			two++;
-	}
-	printk("real hot zone size: %d\n", two);
-*/
-	// printk("h1 = %d h2 = %d h3 = %d h4 = %d h5 = %d h6 = %d\n",h1,h2,h3,h4,h5,h6);
-	// printk("h7 = %d h8 = %d h9 = %d h10 = %d h11 = %d h12 = %d\n",h7,h8,h9,h10,h11,h12);
-	// printk("h13 = %d h14 = %d h15 = %d h16 = %d h17 = %d h18 = %d h19 = %d\n",h13,h14,h15,h16,h17,h18,h19);
-	// hztable_show(filp, ksm_scan.seqnr);
-	filp = NULL;
-	time_flag = 1;
-	define_prescan = 0;
-	hz_size = 0;
 	return NULL;
 }
 
-/*hz ksm*/
+/* hz ksm */
 static void collect_page_info(struct rmap_item *rmap_item)
 {
 	struct gpa_node *gpa_node, *search_node;
@@ -2254,7 +2314,7 @@ static void collect_page_info(struct rmap_item *rmap_item)
 		head = &gpa_node_head20c;
 
 
-	if(rmap_item->number == 3)
+	if(list_empty(head))
 		goto create;
 
 	list_for_each_entry(search_node, head, link) {
@@ -2287,7 +2347,7 @@ create:
  */
 static void table_lookup(struct list_head *head)
 {
-	int i, find;
+	int find;
 	struct gpa_node *search_node, *next;
 	list_for_each_entry_safe(search_node, next, head, link) {
 		struct rb_root *root;
@@ -2310,28 +2370,33 @@ static void table_lookup(struct list_head *head)
 			else if(search_node->gfn < hotzone->gfn)
 				new = &parent->rb_left;
 			else
-			{
+			{	
+				/*
 				if(hotzone->vm1 == ksm_scan.seqnr && hotzone->vm2 == ksm_scan.seqnr)
 				{
 					search_node->in_hot_zone = 1;
 					list_move(&search_node->link, &hot_zone_node);
 					find = 1;
 				}
+				*/
+				if(hotzone->count >= 2) {
+					search_node->in_hot_zone = 1;
+					list_move(&search_node->link, &hot_zone_node);
+					find = 1;
+				}
 				break;
 			}
-
 		}
 
 		if(!find)
 		{
 			search_node->in_hot_zone = 0;
 			list_move(&search_node->link, &rest_gpa_node_head);
-
 		}
 	}
 }
 
-/*for new ksm*/
+/* hz ksm */
 static void define_prescan_section(void)
 {
 	struct list_head *head;
@@ -2611,7 +2676,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	}
 
 }
-/* hz ksm */
+
 static void remain_zone_scan(unsigned int *scan_npages)
 {
 	struct mm_struct *mm;
@@ -2657,7 +2722,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	}
 }
 
-
 static void remaining_show(void)
 {
 	struct gpa_node *gpa_node;
@@ -2669,10 +2733,7 @@ static void remaining_show(void)
 		}
 		printk("\n");
 	}
-
 }
-
-int print2 = 0;
 
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
@@ -2682,39 +2743,53 @@ static void ksm_do_scan(unsigned int scan_npages)
 {
 	struct rmap_item *rmap_item;
 	struct page *uninitialized_var(page);
+	unsigned long hva;
 
 	while (scan_npages-- && likely(!freezing(current))) {
 		cond_resched();
-		// hz ksm
+		/* hz ksm */
 		if(scan_hot_zone && ksm_scan.seqnr == 1)
 			goto scan_hot;
-
 		if(scan_remain && ksm_scan.seqnr == 1)
 			goto scan_re;
-		// like only print once.
-		if(print1 == 0)
-		{
-			kvm_used_memory_slots(); //prints used memory slots in virtual machines
 
-			printk("After kvm_used_memory_slots\n");
-			print1 = 1;
+		if(print_vma == 0)
+		{
+			printk("Information about VMA of each VM:\n");
+			kvm_used_memory_slots(); 	//print memory slots in virtual machines
+			printk("========================================\n");
+			print_vma = 1;
 		}
+
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
-		
-		// before first round of full scan.
-		// store gpa(gfn actually) of each rmap_item
+
+		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0)
 		{
 			rmap_item->number = 0;
-			unsigned long hva = rmap_item->address >> 12;
-
-			/* would change rmap_item->number in this function */
+			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
-			if(rmap_item->number > 2 && rmap_item->gfn != 0)
-				/* link rmap_item at the end of corresponding list */
-				collect_page_info(rmap_item);
+			if(rmap_item->gfn != 0) {
+				collect_page_info(rmap_item);	/* link rmap_item at the end of corresponding list */
+				if(intable(rmap_item->gfn))
+				{
+					hit++;
+					hz_record(rmap_item);
+				}
+			}
+			//if(rmap_item->number > 2 && rmap_item->gfn != 0)
+				//collect_page_info(rmap_item);	
+		}
+		if(ksm_scan.seqnr == 1 && define_prescan == 0) {
+			define_prescan_section();
+			// printk("===DEBUG: define_prescan_section end! ===\n");
+			printk("Hit = %d, Skip = %d\n", hit, skip);
+			hit = skip = 0;
+			define_prescan = 1;
+			scan_hot_zone = 1;
+			goto scan_hot;
 		}
 
 		/*
@@ -2725,22 +2800,21 @@ static void ksm_do_scan(unsigned int scan_npages)
 		}
 		*/
 
-		if(ksm_scan.seqnr == 1 && define_prescan == 0 && rmap_item->number > 2)
-		{
-			printk("pages_shared:%lu\n", ksm_pages_shared);
-			printk("pages_sharing:%lu\n", ksm_pages_sharing);
-			/* seperate hotzone pages from remaining pages */
-			define_prescan_section();
+		// if(ksm_scan.seqnr == 1 && define_prescan == 0 && rmap_item->number > 2)
+		// {
+		// 	printk("pages_shared:%lu\n", ksm_pages_shared);
+		// 	printk("pages_sharing:%lu\n", ksm_pages_sharing);
+		// 	/* seperate hotzone pages from remaining pages */
+		// 	define_prescan_section();
 
-			/*if(list_empty(&rest_gpa_node_head));
-				remaining_show();
-			*/
-			//redefine_hot_zone_list();
-			define_prescan = 1;
-			scan_hot_zone = 1;
-			goto scan_hot;
-		}
-		//handle_file(filp, ksm_scan.seqnr, hva, rmap_item->gfn, rmap_item->number);
+		// 	/*if(list_empty(&rest_gpa_node_head));
+		// 		remaining_show();
+		// 	*/
+		// 	//redefine_hot_zone_list();
+		// 	define_prescan = 1;
+		// 	scan_hot_zone = 1;
+		// 	goto scan_hot;
+		// }
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 	}
@@ -2802,7 +2876,7 @@ static int ksm_scan_thread(void *nothing)
 	}
 	ksm_time = 0;
 	break_time = 0;
-	print1 = 0;
+	print_vma = 0;
 	return 0;
 }
 
@@ -3231,11 +3305,10 @@ static void clean_gpa_node_list(void)
 	define_prescan = 0;
 	scan_hot_zone = 0;
 	scan_remain = 0;
-	ksm_time = 0, break_time = 0, time_flag = 0, print1 = 0;
+	ksm_time = 0, break_time = 0, time_flag = 0, print_vma = 0;
 	h1=0,h2=0,h3=0,h4=0,h5=0,h6=0,h7=0,h8=0,h9=0,h10=0,h11=0,h12=0,h13=0,h14=0,h15=0,h16=0,h17=0,h18=0,h19=0;
 	hz_size = 0, total_rmap = 0;
 	cursor = NULL;
-
 	struct list_head *head;
 
 	head = &gpa_node_head1;

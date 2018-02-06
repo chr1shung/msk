@@ -554,93 +554,6 @@ static void kvm_free_memslots(struct kvm *kvm, struct kvm_memslots *slots)
 	kvfree(slots);
 }
 
-/*for new ksm*/
-static unsigned long get_gfn(struct kvm_memslots *slots, int number, unsigned long hva)
-{
-    int i;
-	unsigned long gfn = 0;
-    for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
-		
-		if(slots->memslots[i].npages == 0)/*Just search those slots which gfn is not 0.*/
-			continue;
-
-		unsigned long slotuser = slots->memslots[i].userspace_addr >> 12;
-		unsigned long slotnpage = slots->memslots[i].npages;
-
-		if(hva >= slotuser && hva < (slotuser + slotnpage))
-		{
-			gfn = (hva - slotuser) + slots->memslots[i].base_gfn;
-			return gfn;
-		}
-		//printk("%d %llu %lu %lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
-
-    }
-	return gfn;
-}
-
-static void print_slots(struct kvm_memslots *slots, int number)
-{
-	int i;
-	for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
-		if(slots->memslots[i].npages == 0) continue;
-		
-		printk("%d %llu %lu %lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
-	}
-}
-
-/*void print_File(struct file *filp, int number, long long base_gfn, long userspace_addr, long npages)
-{
-	mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-		
-	char buf0[1000] = "";
-	char buf1[100] = "";
-	char buf2[100] = "";
-	char buf3[100] = "";
-	char blank[2] = " ";
-	char nextline[2] = "\n";
-	sprintf(buf0, "%d", number);
-	sprintf(buf1, "%llu", base_gfn);
-	sprintf(buf2, "%lu", userspace_addr);
-	sprintf(buf3, "%lu", npages);
-	
-	strcat(buf0, blank);
-	strcat(buf0, buf1);
-	strcat(buf0, blank);
-	strcat(buf0, buf2);
-	strcat(buf0, blank);
-	strcat(buf0, buf3);
-	strcat(buf0, nextline);
-	
-	vfs_write(filp, buf0, strlen(buf0), &filp->f_pos);
-
-	set_fs(old_fs);
-}*/
-/*test code 2*/
-/*static void kvm_mem_slot_print(struct kvm *kvm)
-{	
-	struct kvm_memslots *slots;
-	struct kvm_memory_slot *memslot;
-	int i;
-	for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
-		slots = __kvm_memslots(kvm, i);
-		kvm_for_each_memslot(memslot, slots) {
-			unsigned long hva_start, hva_end;
-			gfn_t gfn_start, gfn_end;
-			hva_start = memslot->userspace_addr;
-			hva_end = memslot->userspace_addr + (memslot->npages << PAGE_SHIFT);
-			if(hva_start >= hva_end)
-				continue;
-
-			gfn_start = hva_to_gfn_memslot(hva_start, memslot);
-			gfn_end = hva_to_gfn_memslot(hva_end + PAGE_SIZE - 1, memslot);
-
-			printk("%lx - %lx, %llu - %llu\n", hva_start, hva_end, gfn_start, gfn_end);
-		}
-	}
-}*/
-
-
 static struct kvm *kvm_create_vm(unsigned long type)
 {
 	int r, i;
@@ -734,7 +647,83 @@ void *kvm_kvzalloc(unsigned long size)
 		return kzalloc(size, GFP_KERNEL);
 }
 
-/*for new ksm*/
+/*hz ksm*/
+
+/*void print_File(struct file *filp, int number, long long base_gfn, long userspace_addr, long npages)
+{
+	mm_segment_t old_fs = get_fs();
+	set_fs(KERNEL_DS);
+		
+	char buf0[1000] = "";
+	char buf1[100] = "";
+	char buf2[100] = "";
+	char buf3[100] = "";
+	char blank[2] = " ";
+	char nextline[2] = "\n";
+	sprintf(buf0, "%d", number);
+	sprintf(buf1, "%llu", base_gfn);
+	sprintf(buf2, "%lu", userspace_addr);
+	sprintf(buf3, "%lu", npages);
+	
+	strcat(buf0, blank);
+	strcat(buf0, buf1);
+	strcat(buf0, blank);
+	strcat(buf0, buf2);
+	strcat(buf0, blank);
+	strcat(buf0, buf3);
+	strcat(buf0, nextline);
+	
+	vfs_write(filp, buf0, strlen(buf0), &filp->f_pos);
+
+	set_fs(old_fs);
+}*/
+/*test code 2*/
+/*static void kvm_mem_slot_print(struct kvm *kvm)
+{	
+	struct kvm_memslots *slots;
+	struct kvm_memory_slot *memslot;
+	int i;
+	for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+		slots = __kvm_memslots(kvm, i);
+		kvm_for_each_memslot(memslot, slots) {
+			unsigned long hva_start, hva_end;
+			gfn_t gfn_start, gfn_end;
+			hva_start = memslot->userspace_addr;
+			hva_end = memslot->userspace_addr + (memslot->npages << PAGE_SHIFT);
+			if(hva_start >= hva_end)
+				continue;
+
+			gfn_start = hva_to_gfn_memslot(hva_start, memslot);
+			gfn_end = hva_to_gfn_memslot(hva_end + PAGE_SIZE - 1, memslot);
+
+			printk("%lx - %lx, %llu - %llu\n", hva_start, hva_end, gfn_start, gfn_end);
+		}
+	}
+}*/
+
+static unsigned long get_gfn(struct kvm_memslots *slots, int number, unsigned long hva)
+{
+    int i;
+	unsigned long gfn = 0;
+    for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
+		
+		if(slots->memslots[i].npages == 0)/*Just search those slots which page number is not 0.*/
+			continue;
+
+		/* the base page number of this slot */
+		unsigned long slotuser = slots->memslots[i].userspace_addr >> 12;
+		unsigned long slotnpage = slots->memslots[i].npages;
+
+		/* this rmap in current scanning slot(VMA) */
+		if(hva >= slotuser && hva < (slotuser + slotnpage))
+		{
+			gfn = (hva - slotuser) + slots->memslots[i].base_gfn;
+			return gfn;
+		}
+    }
+	return gfn;
+}
+
 unsigned long kvm_hva_to_gfn(unsigned long hva, int *ritemnumber)
 {
 	struct kvm *kvm_list;
@@ -767,7 +756,19 @@ unsigned long kvm_hva_to_gfn(unsigned long hva, int *ritemnumber)
 	return gfn;
 }
 
-void kvm_used_memory_slots(void) //used in ksm
+static void print_slots(struct kvm_memslots *slots, int number)
+{
+	int i;
+	printk("VM#%d, KVM_MEM_SLOTS_NUM = %d\n", number, KVM_MEM_SLOTS_NUM);
+	for(i = 0; i < KVM_MEM_SLOTS_NUM; i++) {
+		if(slots->memslots[i].npages == 0) continue;
+
+		/* #VM, base_gfn, hva, #pages_in_slot */
+		printk("%d %10lu %12lu %10lu\n", number, slots->memslots[i].base_gfn, slots->memslots[i].userspace_addr >> 12, slots->memslots[i].npages);
+	}
+}
+
+void kvm_used_memory_slots(void) 
 {
 	struct kvm *kvm_list;
 	int i;
@@ -776,6 +777,7 @@ void kvm_used_memory_slots(void) //used in ksm
 	list_for_each_entry(kvm_list, &vm_list, vm_list) {
 		
 		number = numbervm - correct;
+		printk("KVM_ADDRESS_SPACE_NUM = %d\n", KVM_ADDRESS_SPACE_NUM);
 		for(i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
 			print_slots(kvm_list->memslots[i], number);			
 		}
