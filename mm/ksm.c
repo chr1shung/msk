@@ -154,6 +154,7 @@ struct gpa_node {
 	unsigned long gfn;
 	struct hlist_head hlist;
 	int count;
+	int sum;
 	int in_hot_zone;
 };
 
@@ -1736,10 +1737,6 @@ static void hz_record(struct rmap_item *rmap_item)
 			new = &parent->rb_left;
 		else
 		{
-			// if(rmap_item->number == 1)
-			// 	hotzone->vm1 = ksm_scan.seqnr;
-			// else if(rmap_item->number == 2)
-			// 	hotzone->vm2 = ksm_scan.seqnr;
 			hotzone->sum += rmap_item->number;
 			hotzone->count++;
 			// TODO: do better log here.
@@ -1754,19 +1751,6 @@ static void hz_record(struct rmap_item *rmap_item)
 	hotzone->count = 1;
 	hotzone->gfn = rmap_item->gfn;
 	hotzone->sum = rmap_item->number;
-	/*
-	if(rmap_item->number == 1)
-	{
-		hotzone->vm1 = ksm_scan.seqnr;
-		hotzone->vm2 = 0;
-	}
-	else if(rmap_item->number == 2)
-	{
-		hotzone->vm1 = 0;
-		hotzone->vm2 = ksm_scan.seqnr;
-	}
-	*/
-	/* new = hotzone->node */
 	rb_link_node(&hotzone->node, parent, new);
 	rb_insert_color(&hotzone->node, root);
 }
@@ -1932,11 +1916,12 @@ static void hotzone_show(void)
 
 	gpa_node = list_prepare_entry(gpa_node, &hot_zone_node, link);
 	list_for_each_entry_continue(gpa_node, &hot_zone_node, link) {
-		if(gpa_node->in_hot_zone) {
-			hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
-				printk("#VM = %d, gfn = %lu\n", rmap_item->number, rmap_item->gfn);
-			}
-		}
+		printk("GFN = %lu, count = %d, sum = %d\n", gpa_node->gfn, gpa_node->count, gpa_node->sum);
+		// if(gpa_node->in_hot_zone) {
+		// 	hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
+		// 		printk("#VM = %d, gfn = %lu\n", rmap_item->number, rmap_item->gfn);
+		// 	}
+		// }
 	}
 	printk("Finished dumping hotzone information.\n");
 }
@@ -2008,8 +1993,8 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		if (slot == &ksm_mm_head)
 			return NULL;
 next_mm:
-		printk("==========NEXT MM==========\n");
-		printk("VMA count of this mm = %d\n", slot->mm->map_count);
+		// printk("==========NEXT MM==========\n");
+		// printk("VMA count of this mm = %d\n", slot->mm->map_count);
 		/* update cursor */
 		ksm_scan.address = 0;
 		ksm_scan.rmap_list = &slot->rmap_list;
@@ -2021,10 +2006,12 @@ next_mm:
 		vma = NULL;
 	else
 		vma = find_vma(mm, ksm_scan.address);
+		/*
 		if(vma != last_vma) {
 			last_vma = vma;
 			printk("VMA start = %lu, end = %lu\n", vma->vm_start >> 12, vma->vm_end >> 12);
 		}
+		*/
 
 	for (; vma; vma = vma->vm_next) {
 		if (!(vma->vm_flags & VM_MERGEABLE))
@@ -2113,14 +2100,14 @@ next_mm:
 	hz_size = 0;
 
 	/* dumping hotzone information */
-	/*
+	
 	if(ksm_scan.seqnr > 0)  {
-		printk("Start dumping hotzone information in hotzone_show() after round %d :\n", ksm_scan.seqnr-1);
+		printk("Start dumping hotzone information in hotzone_show() after round %lu :\n", ksm_scan.seqnr);
 		hotzone_show();	
 	}
-	*/
+	
 
-	printk("(potential) hotzone size in round #%lu: %d\n", ksm_scan.seqnr-1, hz_size);
+	printk("(potential) hotzone size in round #%lu: %d\n", ksm_scan.seqnr, hz_size);
 	printk("total rmap_item in hotzone: %d\n", total_rmap);
 
 	return NULL;
@@ -2321,6 +2308,8 @@ static void collect_page_info(struct rmap_item *rmap_item)
 		if(search_node->gfn == rmap_item->gfn)
 		{
 			/* insert rmap_item at gpa_node's hlist head */
+			search_node->count++;
+			search_node->sum += rmap_item->number;
 			hlist_add_head(&rmap_item->gfnhlist, &search_node->hlist);
 			return;
 		}
@@ -2328,10 +2317,10 @@ static void collect_page_info(struct rmap_item *rmap_item)
 
 create:
 	gpa_node = alloc_gpa_node();
-	/* define INIT_HLIST_HEAD(ptr) ((ptr)->first = NULL) */
 	INIT_HLIST_HEAD(&gpa_node->hlist);
-	gpa_node->count = 0;
 	gpa_node->gfn = rmap_item->gfn;
+	gpa_node->count = 1;
+	gpa_node->sum = rmap_item->number;
 	/* insert rmap_item at gpa_node's hlist head */
 	hlist_add_head(&rmap_item->gfnhlist, &gpa_node->hlist);
 	/* insert arg1 after arg2 */
@@ -2339,7 +2328,6 @@ create:
 
 }
 
-/* hz ksm */
 /* 
  * go through each list and check each search_node is in hot zone or not,
  * and then move them to corresponding lists of either
@@ -2349,6 +2337,21 @@ static void table_lookup(struct list_head *head)
 {
 	int find;
 	struct gpa_node *search_node, *next;
+
+	list_for_each_entry_safe(search_node, next, head, link) {
+		find = 0;
+		if(intable(search_node->gfn)) {
+			hit++;
+			search_node->in_hot_zone = 1;
+			list_move(&search_node->link, &hot_zone_node);
+			find = 1;
+		}
+		if(!find) {
+			search_node->in_hot_zone = 0;
+			list_move(&search_node->link, &rest_gpa_node_head);
+		}
+	}
+	/*
 	list_for_each_entry_safe(search_node, next, head, link) {
 		struct rb_root *root;
 		struct rb_node **new;
@@ -2371,14 +2374,14 @@ static void table_lookup(struct list_head *head)
 				new = &parent->rb_left;
 			else
 			{	
-				/*
-				if(hotzone->vm1 == ksm_scan.seqnr && hotzone->vm2 == ksm_scan.seqnr)
-				{
-					search_node->in_hot_zone = 1;
-					list_move(&search_node->link, &hot_zone_node);
-					find = 1;
-				}
-				*/
+				
+				// if(hotzone->vm1 == ksm_scan.seqnr && hotzone->vm2 == ksm_scan.seqnr)
+				// {
+				// 	search_node->in_hot_zone = 1;
+				// 	list_move(&search_node->link, &hot_zone_node);
+				// 	find = 1;
+				// }
+
 				if(hotzone->count >= 2) {
 					search_node->in_hot_zone = 1;
 					list_move(&search_node->link, &hot_zone_node);
@@ -2394,6 +2397,7 @@ static void table_lookup(struct list_head *head)
 			list_move(&search_node->link, &rest_gpa_node_head);
 		}
 	}
+	*/
 }
 
 /* hz ksm */
@@ -2630,16 +2634,14 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	struct gpa_node *gpa_node;
 
 	if(cursor == NULL)
-		// gpa_node = first element of hot_zone_node
 		gpa_node = list_first_entry(&hot_zone_node, struct gpa_node, link);
 	else
 		gpa_node = cursor;
 
 	gpa_node = list_prepare_entry(gpa_node, &hot_zone_node, link);
-	// a for loop start from gpa_node
 	list_for_each_entry_continue(gpa_node, &hot_zone_node, link) {
 
-		*scan_npages--;
+		(*scan_npages)--;
 		if(*scan_npages == 0)
 		{
 			cursor = gpa_node;
@@ -2649,18 +2651,18 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		if(list_is_last(&gpa_node->link, &hot_zone_node))
 		{
 			scan_hot_zone = 0;
-			scan_remain = 1;/*hot zone end, starting scan remain zone*/
+			scan_remain = 1;	/*hot zone end, starting scan remain zone*/
 			cursor = NULL;
 		}
 
 		if(gpa_node->in_hot_zone)
 		{
-			//printk("gpa %llu:", gpa_node->gpa);
+			//printk("gfn %lu:", gpa_node->gfn);
 			hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
 				total_rmap++;
 				//rmap_item->scanned = 1;
-				// printk("#VM = %d, gfn = %llu", rmap_item->number, rmap_item->gfn);
-				// printk(" hva %lu ", rmap_item->address);
+				//printk(" #VM = %d, gfn = %lu", rmap_item->number, rmap_item->gfn);
+				//printk(" hva %lu \n", rmap_item->address);
 				mm = rmap_item->mm;
 				down_read(&mm->mmap_sem);
 				vma = find_vma(mm, rmap_item->address);
@@ -2670,11 +2672,8 @@ static void hot_zone_scan(unsigned int *scan_npages)
 				cmp_and_merge_page(page, rmap_item);
 				put_page(page);
 			}
-			//printk("\n");
 		}
-
 	}
-
 }
 
 static void remain_zone_scan(unsigned int *scan_npages)
@@ -2693,7 +2692,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	gpa_node = list_prepare_entry(gpa_node, &rest_gpa_node_head, link);
 	list_for_each_entry_continue(gpa_node, &rest_gpa_node_head, link) {
 
-		*scan_npages--;
+		(*scan_npages)--;
 		if(*scan_npages == 0)
 		{
 			cursor = gpa_node;
@@ -2710,8 +2709,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 			mm = rmap_item->mm;
 			//rmap_item->scanned = 1;
 			down_read(&mm->mmap_sem);
-
-			// TODO: address >> 12 ??
 			vma = find_vma(mm, rmap_item->address);
 			page = follow_page(vma, rmap_item->address, FOLL_GET);
 			up_read(&mm->mmap_sem);
@@ -2722,6 +2719,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	}
 }
 
+/*
 static void remaining_show(void)
 {
 	struct gpa_node *gpa_node;
@@ -2734,6 +2732,7 @@ static void remaining_show(void)
 		printk("\n");
 	}
 }
+*/
 
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
@@ -2761,6 +2760,15 @@ static void ksm_do_scan(unsigned int scan_npages)
 			print_vma = 1;
 		}
 
+		if(ksm_scan.seqnr == 1 && define_prescan == 0) {
+			define_prescan_section();
+			printk("Hit = %d, Skip = %d\n", hit, skip);
+			hit = skip = 0;
+			define_prescan = 1;
+			scan_hot_zone = 1;
+			goto scan_hot;
+		}
+
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
@@ -2771,50 +2779,10 @@ static void ksm_do_scan(unsigned int scan_npages)
 			rmap_item->number = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
-			if(rmap_item->gfn != 0) {
-				collect_page_info(rmap_item);	/* link rmap_item at the end of corresponding list */
-				if(intable(rmap_item->gfn))
-				{
-					hit++;
-					hz_record(rmap_item);
-				}
-			}
-			//if(rmap_item->number > 2 && rmap_item->gfn != 0)
-				//collect_page_info(rmap_item);	
-		}
-		if(ksm_scan.seqnr == 1 && define_prescan == 0) {
-			define_prescan_section();
-			// printk("===DEBUG: define_prescan_section end! ===\n");
-			printk("Hit = %d, Skip = %d\n", hit, skip);
-			hit = skip = 0;
-			define_prescan = 1;
-			scan_hot_zone = 1;
-			goto scan_hot;
+			if(rmap_item->gfn != 0) 
+				collect_page_info(rmap_item);
 		}
 
-		/*
-		if(rmap_item->scanned)
-		{
-			scan_npages++;
-			continue;
-		}
-		*/
-
-		// if(ksm_scan.seqnr == 1 && define_prescan == 0 && rmap_item->number > 2)
-		// {
-		// 	printk("pages_shared:%lu\n", ksm_pages_shared);
-		// 	printk("pages_sharing:%lu\n", ksm_pages_sharing);
-		// 	/* seperate hotzone pages from remaining pages */
-		// 	define_prescan_section();
-
-		// 	/*if(list_empty(&rest_gpa_node_head));
-		// 		remaining_show();
-		// 	*/
-		// 	//redefine_hot_zone_list();
-		// 	define_prescan = 1;
-		// 	scan_hot_zone = 1;
-		// 	goto scan_hot;
-		// }
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 	}
