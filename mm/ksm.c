@@ -204,7 +204,7 @@ struct rmap_item {
 	};
 	struct hlist_node gfnhlist;    /* link into hlist of rmap_items hanging off that gpa_node */
 	int scanned;
-	struct list_head list;
+	struct list_head link;
 };
 
 static struct rb_root hot_zone[1] = { RB_ROOT };
@@ -225,6 +225,9 @@ int time_flag = 0;
 
 int hit = 0; 
 int skip = 0;
+int len1 = 0;
+int len2 = 0;
+int test[4][2] = {{99999999, 0}, {99999999, 0}, {99999999, 0}, {99999999, 0}};
 
 int print_vma = 0;
 
@@ -334,6 +337,8 @@ static LIST_HEAD(gpa_node_head20c);
 /* head for rmap_item list (vm3, vm4, ...) */
 static LIST_HEAD(hot_zone_node);
 static LIST_HEAD(rest_gpa_node_head);
+static LIST_HEAD(hot_zone_rmap);
+static LIST_HEAD(remaining_rmap);
 
 /* unused in current version */
 // static LIST_HEAD(none_node); //if a rmap_item's gpa is 0, adding it to this list
@@ -2155,7 +2160,6 @@ static void collect_page_info(struct rmap_item *rmap_item)
 	else if(rmap_item->gfn >= 55305 && rmap_item->gfn <= 58991)
 		head = &gpa_node_head4c;
 
-	/* bug here ? */
 	else if(rmap_item->gfn >= 58992 && rmap_item->gfn <= 62678)
 		head = &gpa_node_head5;
 	else if(rmap_item->gfn >= 62679 && rmap_item->gfn <= 66365)
@@ -2299,7 +2303,6 @@ static void collect_page_info(struct rmap_item *rmap_item)
 		head = &gpa_node_head20b;
 	else
 		head = &gpa_node_head20c;
-
 
 	if(list_empty(head))
 		goto create;
@@ -2624,7 +2627,89 @@ static void redefine_hot_zone_list(void)
 */
 
 /* hz ksm */
-struct gpa_node *cursor = NULL;
+// struct gpa_node *cursor = NULL;
+struct rmap_item *cursor = NULL;
+static void hot_zone_scan(unsigned int *scan_npages)
+{
+	struct mm_struct *mm;
+	struct vm_area_struct *vma;
+	struct page *page;
+	struct rmap_item *rmap_item;
+	//struct gpa_node *gpa_node;
+
+	if(cursor == NULL)
+		rmap_item = list_first_entry(&hot_zone_rmap, struct rmap_item, link);
+	else
+		rmap_item = cursor;
+
+	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
+	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
+
+		(*scan_npages)--;
+		if(*scan_npages == 0)
+		{
+			cursor = rmap_item;
+			break;
+		}
+
+		if(list_is_last(&rmap_item->link, &hot_zone_rmap))
+		{
+			scan_hot_zone = 0;
+			scan_remain = 1;	
+			cursor = NULL;
+		}
+
+		mm = rmap_item->mm;
+		down_read(&mm->mmap_sem);
+		vma = find_vma(mm, rmap_item->address);
+		page = follow_page(vma, rmap_item->address, FOLL_GET);
+		up_read(&mm->mmap_sem);
+
+		cmp_and_merge_page(page, rmap_item);
+		put_page(page);
+	}
+}
+
+static void remain_zone_scan(unsigned int *scan_npages)
+{
+	struct mm_struct *mm;
+	struct vm_area_struct *vma;
+	struct page *page;
+	struct rmap_item *rmap_item;
+	//struct gpa_node *gpa_node;
+
+	if(cursor == NULL)
+		rmap_item = list_first_entry(&remaining_rmap, struct rmap_item, link);
+	else
+		rmap_item = cursor;
+
+	rmap_item = list_prepare_entry(rmap_item, &remaining_rmap, link);
+	list_for_each_entry_continue(rmap_item, &remaining_rmap, link) {
+
+		(*scan_npages)--;
+		if(*scan_npages == 0)
+		{
+			cursor = rmap_item;
+			break;
+		}
+
+		if(list_is_last(&rmap_item->link, &remaining_rmap))
+		{
+			scan_remain = 0;	
+			cursor = NULL;
+		}
+
+		mm = rmap_item->mm;
+		down_read(&mm->mmap_sem);
+		vma = find_vma(mm, rmap_item->address);
+		page = follow_page(vma, rmap_item->address, FOLL_GET);
+		up_read(&mm->mmap_sem);
+
+		cmp_and_merge_page(page, rmap_item);
+		put_page(page);
+	}
+}
+/*
 static void hot_zone_scan(unsigned int *scan_npages)
 {
 	struct mm_struct *mm;
@@ -2651,7 +2736,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		if(list_is_last(&gpa_node->link, &hot_zone_node))
 		{
 			scan_hot_zone = 0;
-			scan_remain = 1;	/*hot zone end, starting scan remain zone*/
+			scan_remain = 1;	
 			cursor = NULL;
 		}
 
@@ -2718,6 +2803,8 @@ static void remain_zone_scan(unsigned int *scan_npages)
 		}
 	}
 }
+*/
+
 
 /*
 static void remaining_show(void)
@@ -2761,9 +2848,9 @@ static void ksm_do_scan(unsigned int scan_npages)
 		}
 
 		if(ksm_scan.seqnr == 1 && define_prescan == 0) {
-			define_prescan_section();
-			printk("Hit = %d, Skip = %d\n", hit, skip);
-			hit = skip = 0;
+			// define_prescan_section();
+			// printk("Hit = %d, Skip = %d\n", hit, skip);
+			// hit = skip = 0;
 			define_prescan = 1;
 			scan_hot_zone = 1;
 			goto scan_hot;
@@ -2779,8 +2866,25 @@ static void ksm_do_scan(unsigned int scan_npages)
 			rmap_item->number = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
+			
+			if(test[rmap_item->number - 1][0] > rmap_item->gfn)
+				test[rmap_item->number - 1][0] = rmap_item->gfn;
+				
+			if(test[rmap_item->number - 1][1] < rmap_item->gfn)
+				test[rmap_item->number - 1][1] = rmap_item->gfn;
+
+			if(intable(rmap_item->gfn)) {
+				list_add(&rmap_item->link, &hot_zone_rmap);
+				len1++;
+			}
+			else {
+				list_add(&rmap_item->link, &remaining_rmap);
+				len2++;
+			}
+			/*
 			if(rmap_item->gfn != 0) 
 				collect_page_info(rmap_item);
+			*/
 		}
 
 		cmp_and_merge_page(page, rmap_item);
@@ -3269,6 +3373,7 @@ static void deletelist(struct list_head *head)
 /*for new ksm*/
 static void clean_gpa_node_list(void)
 {
+	int i = 0;
 	hotzone_used = 0;
 	define_prescan = 0;
 	scan_hot_zone = 0;
@@ -3444,6 +3549,12 @@ static void clean_gpa_node_list(void)
 	deletelist(head);
 	head = &rest_gpa_node_head;
 	deletelist(head);
+
+	printk("=============\nSome ending logs:\n");
+	printk("hot size = %d,  remaining size = %d\n", len1, len2);
+	for(i = 0; i < 4; i++) {
+		printk("VM#%d, min = %d, max = %d\n", i+1, test[i][0], test[i][1]);
+	}
 
 }
 
