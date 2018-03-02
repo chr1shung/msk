@@ -1805,7 +1805,7 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 */
 			// HZ ksm
 			if(rmap_item->gfn != 0 && ksm_scan.seqnr == 1)
-				printk("Stable: GFN = %lu, #VM = %d\n", rmap_item->gfn, rmap_item->number);
+				printk("Stable: GFN = %lu, #VM = %d, checksum = %u\n", rmap_item->gfn, rmap_item->number, rmap_item->oldchecksum);
 			// ------------------
 			lock_page(kpage);
 			/* add rmap_item into stable tree node's rmap_hlist */
@@ -1842,8 +1842,8 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 */
 
 			if(rmap_item->gfn != 0 && ksm_scan.seqnr == 1) {
-				printk("Rmap: GFN = %lu, #VM = %d;  ", rmap_item->gfn, rmap_item->number);
-				printk("Unstable: GFN = %lu, #VM = %d\n", tree_rmap_item->gfn, tree_rmap_item->number);
+				printk("Rmap: GFN = %lu, #VM = %d, checksum = %u; ", rmap_item->gfn, rmap_item->number), rmap_item->oldchecksum;
+				printk("Unstable: GFN = %lu, #VM = %d, checksum = %u\n", tree_rmap_item->gfn, tree_rmap_item->number, tree_rmap_item->oldchecksum);
 			}
 
 			lock_page(kpage);
