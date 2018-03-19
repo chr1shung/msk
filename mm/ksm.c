@@ -210,13 +210,11 @@ struct rmap_item {
 
 static struct rb_root hot_zone[1] = { RB_ROOT };
 static struct rb_root *hot_zone_table = hot_zone;
+
 /*for hot zone*/
-#define hotzone_count 300000
-int hotzone_used = 0;
 int define_prescan = 0;
 int scan_hot_zone = 0;
 int scan_remain = 0;
-int scan_none = 0;
 
 /*For time analysis*/
 struct timeval before, after;
@@ -224,8 +222,8 @@ unsigned long ksm_time = 0;
 unsigned long break_time = 0;
 int time_flag = 0;
 
+/* debugging variable */
 int hit = 0; 
-int skip = 0;
 int len1 = 0;
 int len2 = 0;
 int print_vma = 0;
@@ -339,15 +337,6 @@ static LIST_HEAD(rest_gpa_node_head);
 static LIST_HEAD(hot_zone_rmap);
 static LIST_HEAD(remaining_rmap);
 
-/* unused in current version */
-// static LIST_HEAD(none_node); //if a rmap_item's gpa is 0, adding it to this list
-// static LIST_HEAD(rmap_item_head);
-/*if a rmap_item is in hot zone, adding it to this list*/
-// static LIST_HEAD(hot_zone_list);
-/*static struct gpa_node gpa_node_head = {
-	.link = LIST_HEAD_INIT(gpa_node_head.link),
-};*/
-
 /* --------------------------------------------------- */
 
 static struct ksm_scan ksm_scan = {
@@ -401,61 +390,6 @@ static DEFINE_SPINLOCK(ksm_mmlist_lock);
 		sizeof(struct __struct), __alignof__(struct __struct),\
 		(__flags), NULL)
 
-//static struct file *filp = NULL;
-/*
-static struct file *open_file(char *filename)
-{
-	struct file *filp;
-	mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	filp = filp_open(filename, O_CREAT | O_RDWR, 0644);
-	if(IS_ERR(filp))
-		printk("open error\n");
-	else
-		printk("open success\n");
-
-	set_fs(old_fs);
-	return filp;
-}
-
-static void write_file(struct file *filp, unsigned long long hva, unsigned long long gpa, int number)
-{
-	mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	char buf1[500], buf2[100], buf3[3] = "\n", blank[3] = " ", buf4[50];
-	sprintf(buf1, "%lu", hva);
-	strcat(buf1, blank);
-	sprintf(buf2, "%llu", gpa);
-	strcat(buf1, buf2);
-	strcat(buf1, blank);
-	sprintf(buf4, "%d", number);
-	strcat(buf1, buf4);
-	strcat(buf1, buf3);
-	vfs_write(filp, buf1, strlen(buf1), &filp->f_pos);
-
-	set_fs(old_fs);
-}
-
-static void handle_file(struct file *filpr, unsigned long scan_round, unsigned long long hva, unsigned long long gpa, int number)
-{
-	if(filpr == NULL)
-	{
-		printk("open file!\n");
-		char filename[1000] = "/home/tsai-te-yu/ksmresult/out";
-		char txt[6] = ".txt";
-		char round[50];
-		sprintf(round, "%lu", scan_round);
-		strcat(filename, round);
-		strcat(filename, txt);
-		filp = open_file(filename);
-		write_file(filp, hva, gpa, number);
-	}
-	else
-		write_file(filp, hva, gpa, number);
-
-}
-*/
 
 static int __init ksm_slab_init(void)
 {
@@ -1912,7 +1846,6 @@ static struct rmap_item *get_next_rmap_item(struct mm_slot *mm_slot,
 	return rmap_item;
 }
 
-int h1=0,h2=0,h3=0,h4=0,h5=0,h6=0,h7=0,h8=0,h9=0,h10=0,h11=0,h12=0,h13=0,h14=0,h15=0,h16=0,h17=0,h18=0,h19=0, h19a=0;
 int total_rmap = 0;
 
 static void hotzone_show(void)
@@ -2597,42 +2530,6 @@ static void define_prescan_section(void)
 	table_lookup(head);
 }
 
-/*
-static void redefine_hot_zone_list(void)
-{
-	struct gpa_node *search_node, *next;
-	list_for_each_entry_safe(search_node, next, &hot_zone_node, link) {
-		struct rb_root *root;
-		struct rb_node **new;
-		struct rb_node *parent;
-		struct hotzone *hotzone;
-
-		root = hot_zone_table;
-		new = &root->rb_node;
-		parent = NULL;
-
-		while(*new)
-		{
-			hotzone = rb_entry(*new, struct hotzone, node);
-			parent = *new;
-
-			if(search_node->gpa > hotzone->gpa)
-				new = &parent->rb_right;
-			else if(search_node->gpa < hotzone->gpa)
-				new = &parent->rb_left;
-			else
-			{
-				if(hotzone->vm1 != hotzone->vm2)
-				{
-					search_node->in_hot_zone = 0;
-					list_move(&search_node->link, &gpa_node_head);
-				}
-				break;
-			}
-		}
-	}
-}
-*/
 
 /* hz ksm */
 // struct gpa_node *cursor = NULL;
@@ -2818,21 +2715,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 */
 
 
-/*
-static void remaining_show(void)
-{
-	struct gpa_node *gpa_node;
-	struct rmap_item *rmap_item;
-	list_for_each_entry(gpa_node, &rest_gpa_node_head, link) {
-		printk("gfn: %lu ", gpa_node->gfn);
-		hlist_for_each_entry(rmap_item, &gpa_node->hlist,gfnhlist) {
-			printk("%lu ", rmap_item->gfn);
-		}
-		printk("\n");
-	}
-}
-*/
-
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
  * @scan_npages - number of pages we want to scan before we return.
@@ -2902,7 +2784,6 @@ static int ksm_scan_thread(void *nothing)
 {
 	set_freezable();
 	set_user_nice(current, 5);
-	//hotzone_init();
 
 	while (!kthread_should_stop()) {
 		mutex_lock(&ksm_thread_mutex);
@@ -3365,13 +3246,10 @@ static void deletelist(struct list_head *head)
 /*for new ksm*/
 static void clean_gpa_node_list(void)
 {
-	int i = 0;
-	hotzone_used = 0;
 	define_prescan = 0;
 	scan_hot_zone = 0;
 	scan_remain = 0;
 	ksm_time = 0, break_time = 0, time_flag = 0, print_vma = 0;
-	h1=0,h2=0,h3=0,h4=0,h5=0,h6=0,h7=0,h8=0,h9=0,h10=0,h11=0,h12=0,h13=0,h14=0,h15=0,h16=0,h17=0,h18=0,h19=0;
 	hz_size = 0, total_rmap = 0;
 	cursor = NULL;
 	struct list_head *head;
@@ -3537,9 +3415,9 @@ static void clean_gpa_node_list(void)
 	head = &gpa_node_head20c;
 	deletelist(head);
 
-	head = &hot_zone_node;
+	head = &hot_zone_rmap;
 	deletelist(head);
-	head = &rest_gpa_node_head;
+	head = &remaining_rmap;
 	deletelist(head);
 
 	printk("=============Some ending logs=============\n");
