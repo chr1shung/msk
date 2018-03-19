@@ -205,6 +205,7 @@ struct rmap_item {
 	struct hlist_node gfnhlist;    /* link into hlist of rmap_items hanging off that gpa_node */
 	int scanned;
 	struct list_head link;
+	struct hlist_head *hlink;
 };
 
 static struct rb_root hot_zone[1] = { RB_ROOT };
@@ -227,8 +228,6 @@ int hit = 0;
 int skip = 0;
 int len1 = 0;
 int len2 = 0;
-int test[4][2] = {{99999999, 0}, {99999999, 0}, {99999999, 0}, {99999999, 0}};
-
 int print_vma = 0;
 
 #define SEQNR_MASK	0x0ff	/* low bits of unstable tree seqnr */
@@ -1809,6 +1808,8 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * add its rmap_item to the stable tree.
 			 */
 			// HZ ksm
+			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
+				hit++;
 			//if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
 				/* update struct hotzone's properties */
 				//vm12_record(rmap_item);
@@ -1846,6 +1847,8 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * The pages were successfully merged: insert new
 			 * node in the stable tree and add both rmap_items.
 			 */
+			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
+				hit++;
 			/*
 			if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
 			{
@@ -2100,6 +2103,11 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;	/* one round is finished */
+	if(ksm_scan.seqnr == 1 && define_prescan == 0) {
+		define_prescan = 1;
+		scan_hot_zone = 1;
+	}
+
 	time_flag = 1;
 	// define_prescan = 0;
 	hz_size = 0;
@@ -2636,6 +2644,9 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	struct page *page;
 	struct rmap_item *rmap_item;
 	//struct gpa_node *gpa_node;
+	unsigned int number;
+
+	number = (*scan_npages)*2;
 
 	if(cursor == NULL)
 		rmap_item = list_first_entry(&hot_zone_rmap, struct rmap_item, link);
@@ -2644,9 +2655,9 @@ static void hot_zone_scan(unsigned int *scan_npages)
 
 	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
 	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
-
-		(*scan_npages)--;
-		if(*scan_npages == 0)
+	
+		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
+		if(--number == 0)
 		{
 			cursor = rmap_item;
 			break;
@@ -2695,8 +2706,9 @@ static void remain_zone_scan(unsigned int *scan_npages)
 
 		if(list_is_last(&rmap_item->link, &remaining_rmap))
 		{
-			scan_remain = 0;	
+			scan_remain = 0;
 			cursor = NULL;
+			ksm_scan.seqnr++;
 		}
 
 		mm = rmap_item->mm;
@@ -2839,6 +2851,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 		if(scan_remain && ksm_scan.seqnr == 1)
 			goto scan_re;
 
+		/*
 		if(print_vma == 0)
 		{
 			printk("Information about VMA of each VM:\n");
@@ -2846,16 +2859,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			printk("========================================\n");
 			print_vma = 1;
 		}
-
-		if(ksm_scan.seqnr == 1 && define_prescan == 0) {
-			// define_prescan_section();
-			// printk("Hit = %d, Skip = %d\n", hit, skip);
-			// hit = skip = 0;
-			define_prescan = 1;
-			scan_hot_zone = 1;
-			goto scan_hot;
-		}
-
+		*/
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
@@ -2866,13 +2870,6 @@ static void ksm_do_scan(unsigned int scan_npages)
 			rmap_item->number = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
-			
-			if(test[rmap_item->number - 1][0] > rmap_item->gfn)
-				test[rmap_item->number - 1][0] = rmap_item->gfn;
-				
-			if(test[rmap_item->number - 1][1] < rmap_item->gfn)
-				test[rmap_item->number - 1][1] = rmap_item->gfn;
-
 			if(intable(rmap_item->gfn)) {
 				list_add(&rmap_item->link, &hot_zone_rmap);
 				len1++;
@@ -2881,12 +2878,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 				list_add(&rmap_item->link, &remaining_rmap);
 				len2++;
 			}
-			/*
-			if(rmap_item->gfn != 0) 
-				collect_page_info(rmap_item);
-			*/
 		}
-
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 	}
@@ -3550,12 +3542,9 @@ static void clean_gpa_node_list(void)
 	head = &rest_gpa_node_head;
 	deletelist(head);
 
-	printk("=============\nSome ending logs:\n");
+	printk("=============Some ending logs=============\n");
 	printk("hot size = %d,  remaining size = %d\n", len1, len2);
-	for(i = 0; i < 4; i++) {
-		printk("VM#%d, min = %d, max = %d\n", i+1, test[i][0], test[i][1]);
-	}
-
+	printk("Hit = %d\n", hit);
 }
 
 
@@ -3586,7 +3575,7 @@ static ssize_t run_store(struct kobject *kobj, struct kobj_attribute *attr,
 			set_current_oom_origin();
 			printk("In run_store, where we turned off ksm:\n");
 			err = unmerge_and_remove_all_rmap_items();
-			clean_gpa_node_list();/*new ksm clean function*/
+			clean_gpa_node_list();
 			clear_current_oom_origin();
 			if (err) {
 				ksm_run = KSM_RUN_STOP;
