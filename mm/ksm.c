@@ -203,9 +203,7 @@ struct rmap_item {
 		};
 	};
 	struct hlist_node gfnhlist;    /* link into hlist of rmap_items hanging off that gpa_node */
-	int scanned;
 	struct list_head link;
-	struct hlist_head *hlink;
 };
 
 static struct rb_root hot_zone[1] = { RB_ROOT };
@@ -1744,10 +1742,6 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			// HZ ksm
 			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
 				hit++;
-			//if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
-				/* update struct hotzone's properties */
-				//vm12_record(rmap_item);
-			// ------------------
 			lock_page(kpage);
 			/* add rmap_item into stable tree node's rmap_hlist */
 			stable_tree_append(rmap_item, page_stable_node(kpage));
@@ -1783,15 +1777,6 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 */
 			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
 				hit++;
-			/*
-			if(rmap_item->gfn != 0 && (rmap_item->number == 1 || rmap_item->number == 2))
-			{
-				//printk("rmap(number gpa): %d %llu  tree(number gpa): %d %llu\n", rmap_item->number, rmap_item->gfn, tree_rmap_item->number, tree_rmap_item->gfn);
-				vm12_record(rmap_item);
-				vm12_record(tree_rmap_item);
-			}
-			*/
-			//printk("rmap: %d %llu  tree: %d %llu\n", rmap_item->number, rmap_item->gfn, tree_rmap_item->number, tree_rmap_item->gfn);
 			lock_page(kpage);
 			stable_node = stable_tree_insert(kpage);
 			if (stable_node) {
@@ -1837,9 +1822,6 @@ static struct rmap_item *get_next_rmap_item(struct mm_slot *mm_slot,
 		rmap_item->mm = mm_slot->mm;
 		rmap_item->address = addr;
 
-		/* hz ksm */
-		//rmap_item->scanned = 0;
-
 		rmap_item->rmap_list = *rmap_list;
 		*rmap_list = rmap_item;
 	}
@@ -1850,19 +1832,10 @@ int total_rmap = 0;
 
 static void hotzone_show(void)
 {
-	struct gpa_node *gpa_node;
 	struct rmap_item *rmap_item;
 
-	gpa_node = list_first_entry(&hot_zone_node, struct gpa_node, link);
-
-	gpa_node = list_prepare_entry(gpa_node, &hot_zone_node, link);
-	list_for_each_entry_continue(gpa_node, &hot_zone_node, link) {
-		printk("GFN = %lu, count = %d, sum = %d\n", gpa_node->gfn, gpa_node->count, gpa_node->sum);
-		// if(gpa_node->in_hot_zone) {
-		// 	hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
-		// 		printk("#VM = %d, gfn = %lu\n", rmap_item->number, rmap_item->gfn);
-		// 	}
-		// }
+	list_for_each_entry(rmap_item, &hot_zone_rmap, link) {
+		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
 	}
 	printk("Finished dumping hotzone information.\n");
 }
@@ -1934,8 +1907,6 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		if (slot == &ksm_mm_head)
 			return NULL;
 next_mm:
-		// printk("==========NEXT MM==========\n");
-		// printk("VMA count of this mm = %d\n", slot->mm->map_count);
 		/* update cursor */
 		ksm_scan.address = 0;
 		ksm_scan.rmap_list = &slot->rmap_list;
@@ -1947,12 +1918,6 @@ next_mm:
 		vma = NULL;
 	else
 		vma = find_vma(mm, ksm_scan.address);
-		/*
-		if(vma != last_vma) {
-			last_vma = vma;
-			printk("VMA start = %lu, end = %lu\n", vma->vm_start >> 12, vma->vm_end >> 12);
-		}
-		*/
 
 	for (; vma; vma = vma->vm_next) {
 		if (!(vma->vm_flags & VM_MERGEABLE))
@@ -2042,7 +2007,6 @@ next_mm:
 	}
 
 	time_flag = 1;
-	// define_prescan = 0;
 	hz_size = 0;
 
 	/* dumping hotzone information */
@@ -2052,7 +2016,6 @@ next_mm:
 		hotzone_show();	
 	}
 	
-
 	printk("(potential) hotzone size in round #%lu: %d\n", ksm_scan.seqnr, hz_size);
 	printk("total rmap_item in hotzone: %d\n", total_rmap);
 
@@ -2553,7 +2516,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
 	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
 	
-		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
+		// printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
 		if(--number == 0)
 		{
 			cursor = rmap_item;
@@ -2654,7 +2617,6 @@ static void hot_zone_scan(unsigned int *scan_npages)
 			//printk("gfn %lu:", gpa_node->gfn);
 			hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
 				total_rmap++;
-				//rmap_item->scanned = 1;
 				//printk(" #VM = %d, gfn = %lu", rmap_item->number, rmap_item->gfn);
 				//printk(" hva %lu \n", rmap_item->address);
 				mm = rmap_item->mm;
@@ -2701,7 +2663,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 
 		hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
 			mm = rmap_item->mm;
-			//rmap_item->scanned = 1;
 			down_read(&mm->mmap_sem);
 			vma = find_vma(mm, rmap_item->address);
 			page = follow_page(vma, rmap_item->address, FOLL_GET);
@@ -2721,7 +2682,8 @@ static void remain_zone_scan(unsigned int *scan_npages)
  */
 static void ksm_do_scan(unsigned int scan_npages)
 {
-	struct rmap_item *rmap_item;
+	int find;
+	struct rmap_item *rmap_item, *cursor;
 	struct page *uninitialized_var(page);
 	unsigned long hva;
 
@@ -2732,8 +2694,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			goto scan_hot;
 		if(scan_remain && ksm_scan.seqnr == 1)
 			goto scan_re;
-
-		/*
+	
 		if(print_vma == 0)
 		{
 			printk("Information about VMA of each VM:\n");
@@ -2741,7 +2702,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			printk("========================================\n");
 			print_vma = 1;
 		}
-		*/
+		
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
 			return;
@@ -2749,11 +2710,28 @@ static void ksm_do_scan(unsigned int scan_npages)
 		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0)
 		{
+			cursor = NULL;
+			find = 0;
 			rmap_item->number = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
 			if(intable(rmap_item->gfn)) {
 				list_add(&rmap_item->link, &hot_zone_rmap);
+				/*
+				if(rmap_item->number == 1)
+					list_add(&rmap_item->link, &hot_zone_rmap);
+				else {
+					list_for_each_entry(cursor, &hot_zone_rmap, link) {
+						if(cursor->gfn == rmap_item->gfn) {
+							list_add(&rmap_item->link, &cursor->link);
+							find = 1;
+							break;
+						}
+					}
+					if(!find)
+						list_add(&rmap_item->link, &hot_zone_rmap);
+				}
+				*/
 				len1++;
 			}
 			else {
@@ -3228,18 +3206,10 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 // hz ksm
 static void deletelist(struct list_head *head)
 {
-	struct gpa_node *delete_node, *next;
+	struct rmap_item *delete, *next;
 
-	list_for_each_entry_safe(delete_node, next, head, link) {
-		struct rmap_item *rmap_item;
-		struct hlist_node *node;
-
-		hlist_for_each_entry_safe(rmap_item, node, &delete_node->hlist, gfnhlist) {
-			hlist_del(&rmap_item->gfnhlist);
-		}
-
-		list_del(&delete_node->link);
-		free_gpa_node(delete_node);
+	list_for_each_entry_safe(delete, next, head, link) {
+		list_del(&delete->link);
 	}
 }
 
@@ -3415,6 +3385,10 @@ static void clean_gpa_node_list(void)
 	head = &gpa_node_head20c;
 	deletelist(head);
 
+	head = &hot_zone_node;
+	deletelist(head);
+	head = &rest_gpa_node_head;
+	deletelist(head);
 	head = &hot_zone_rmap;
 	deletelist(head);
 	head = &remaining_rmap;
