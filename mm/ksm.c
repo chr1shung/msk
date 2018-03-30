@@ -148,7 +148,7 @@ struct stable_node {
 #endif
 };
 
-/* hz ksm */
+/* HZ KSM */
 struct gpa_node {
 	struct list_head link;
 	unsigned long gfn;
@@ -156,16 +156,6 @@ struct gpa_node {
 	int count;
 	int sum;
 	int in_hot_zone;
-};
-
-/* hz ksm */
-struct hotzone {
-	unsigned long gfn;
-	int vm1;
-	int vm2;
-	int sum;
-	int count;
-	struct rb_node node;
 };
 
 /**
@@ -183,7 +173,7 @@ struct hotzone {
 struct rmap_item {
 	struct rmap_item *rmap_list;
 
-	int number; /*which vm own this page*/
+	int number; /* which vm own this page */
 	unsigned long gfn;
 
 	union {
@@ -206,15 +196,12 @@ struct rmap_item {
 	struct list_head link;
 };
 
-static struct rb_root hot_zone[1] = { RB_ROOT };
-static struct rb_root *hot_zone_table = hot_zone;
-
-/*for hot zone*/
+/* For hot zone */
 int define_prescan = 0;
 int scan_hot_zone = 0;
 int scan_remain = 0;
 
-/*For time analysis*/
+/* For time analysis */
 struct timeval before, after;
 unsigned long ksm_time = 0;
 unsigned long break_time = 0;
@@ -246,96 +233,9 @@ static struct mm_slot ksm_mm_head = {
 	.mm_list = LIST_HEAD_INIT(ksm_mm_head.mm_list),
 };
 
-/* ------------------ hz_ksm ------------------ */
-/*head for gpa node*/
-static LIST_HEAD(gpa_node_head1);
-static LIST_HEAD(gpa_node_head1a);
-static LIST_HEAD(gpa_node_head1b);
-static LIST_HEAD(gpa_node_head1c);
-static LIST_HEAD(gpa_node_head2);
-static LIST_HEAD(gpa_node_head2a);
-static LIST_HEAD(gpa_node_head2b);
-static LIST_HEAD(gpa_node_head2c);
-static LIST_HEAD(gpa_node_head3);
-static LIST_HEAD(gpa_node_head3a);
-static LIST_HEAD(gpa_node_head3b);
-static LIST_HEAD(gpa_node_head3c);
-static LIST_HEAD(gpa_node_head4);
-static LIST_HEAD(gpa_node_head4a);
-static LIST_HEAD(gpa_node_head4b);
-static LIST_HEAD(gpa_node_head4c);
-static LIST_HEAD(gpa_node_head5);
-static LIST_HEAD(gpa_node_head5a);
-static LIST_HEAD(gpa_node_head5b);
-static LIST_HEAD(gpa_node_head5c);
-static LIST_HEAD(gpa_node_head6);
-static LIST_HEAD(gpa_node_head6a);
-static LIST_HEAD(gpa_node_head6b);
-static LIST_HEAD(gpa_node_head6c);
-static LIST_HEAD(gpa_node_head7);
-static LIST_HEAD(gpa_node_head7a);
-static LIST_HEAD(gpa_node_head7b);
-static LIST_HEAD(gpa_node_head7c);
-static LIST_HEAD(gpa_node_head8);
-static LIST_HEAD(gpa_node_head8a);
-static LIST_HEAD(gpa_node_head8b);
-static LIST_HEAD(gpa_node_head8c);
-static LIST_HEAD(gpa_node_head9);
-static LIST_HEAD(gpa_node_head9a);
-static LIST_HEAD(gpa_node_head9b);
-static LIST_HEAD(gpa_node_head9c);
-static LIST_HEAD(gpa_node_head10);
-static LIST_HEAD(gpa_node_head10a);
-static LIST_HEAD(gpa_node_head10b);
-static LIST_HEAD(gpa_node_head10c);
-static LIST_HEAD(gpa_node_head11);
-static LIST_HEAD(gpa_node_head11a);
-static LIST_HEAD(gpa_node_head11b);
-static LIST_HEAD(gpa_node_head11c);
-static LIST_HEAD(gpa_node_head12);
-static LIST_HEAD(gpa_node_head12a);
-static LIST_HEAD(gpa_node_head12b);
-static LIST_HEAD(gpa_node_head12c);
-static LIST_HEAD(gpa_node_head13);
-static LIST_HEAD(gpa_node_head13a);
-static LIST_HEAD(gpa_node_head13b);
-static LIST_HEAD(gpa_node_head13c);
-static LIST_HEAD(gpa_node_head14);
-static LIST_HEAD(gpa_node_head14a);
-static LIST_HEAD(gpa_node_head14b);
-static LIST_HEAD(gpa_node_head14c);
-static LIST_HEAD(gpa_node_head15);
-static LIST_HEAD(gpa_node_head15a);
-static LIST_HEAD(gpa_node_head15b);
-static LIST_HEAD(gpa_node_head15c);
-static LIST_HEAD(gpa_node_head16);
-static LIST_HEAD(gpa_node_head16a);
-static LIST_HEAD(gpa_node_head16b);
-static LIST_HEAD(gpa_node_head16c);
-static LIST_HEAD(gpa_node_head17);
-static LIST_HEAD(gpa_node_head17a);
-static LIST_HEAD(gpa_node_head17b);
-static LIST_HEAD(gpa_node_head17c);
-static LIST_HEAD(gpa_node_head18);
-static LIST_HEAD(gpa_node_head18a);
-static LIST_HEAD(gpa_node_head18b);
-static LIST_HEAD(gpa_node_head18c);
-static LIST_HEAD(gpa_node_head19);
-static LIST_HEAD(gpa_node_head19a);
-static LIST_HEAD(gpa_node_head19b);
-static LIST_HEAD(gpa_node_head19c);
-static LIST_HEAD(gpa_node_head20);
-static LIST_HEAD(gpa_node_head20a);
-static LIST_HEAD(gpa_node_head20b);
-static LIST_HEAD(gpa_node_head20c);
-
-/* head for rmap_item list (vm3, vm4, ...) */
-static LIST_HEAD(hot_zone_node);
-static LIST_HEAD(rest_gpa_node_head);
+/* HZ */
 static LIST_HEAD(hot_zone_rmap);
 static LIST_HEAD(remaining_rmap);
-
-/* --------------------------------------------------- */
 
 static struct ksm_scan ksm_scan = {
 	.mm_slot = &ksm_mm_head,
@@ -344,7 +244,7 @@ static struct ksm_scan ksm_scan = {
 static struct kmem_cache *rmap_item_cache;
 static struct kmem_cache *stable_node_cache;
 static struct kmem_cache *mm_slot_cache;
-static struct kmem_cache *gpa_node_cache; /*hz_ksm*/
+static struct kmem_cache *gpa_node_cache; /* HZ KSM */
 
 /* The number of nodes in the stable tree */
 static unsigned long ksm_pages_shared;
@@ -1600,97 +1500,6 @@ static void stable_tree_append(struct rmap_item *rmap_item,
 		ksm_pages_shared++;
 }
 
-// HZ ksm
-int hz_size = 0;	/* hz_size = hotzone size(in one round) */
-static void vm12_record(struct rmap_item *rmap_item)
-{
-	struct rb_root *root;
-	struct rb_node **new;
-	struct rb_node *parent = NULL;
-	struct hotzone *hotzone;
-
-	root = hot_zone_table;
-	new = &root->rb_node;
-
-	while(*new)
-	{
-		hotzone = rb_entry(*new, struct hotzone, node);
-		parent = *new;
-		if(rmap_item->gfn > hotzone->gfn)
-			new = &parent->rb_right;
-		else if(rmap_item->gfn < hotzone->gfn)
-			new = &parent->rb_left;
-		else
-		{
-			if(rmap_item->number == 1)
-				hotzone->vm1 = ksm_scan.seqnr;
-			else if(rmap_item->number == 2)
-				hotzone->vm2 = ksm_scan.seqnr;
-			hotzone->count++;
-			if(hotzone->count == 2)
-				hz_size++;
-
-			return;
-		}
-	}
-
-	hotzone = kmalloc(sizeof(struct hotzone), GFP_KERNEL);
-	hotzone->count = 1;
-	hotzone->gfn = rmap_item->gfn;
-	if(rmap_item->number == 1)
-	{
-		hotzone->vm1 = ksm_scan.seqnr;
-		hotzone->vm2 = 0;
-	}
-	else if(rmap_item->number == 2)
-	{
-		hotzone->vm1 = 0;
-		hotzone->vm2 = ksm_scan.seqnr;
-	}
-	/* new = hotzone->node */
-	rb_link_node(&hotzone->node, parent, new);
-	rb_insert_color(&hotzone->node, root);
-
-}
-
-static void hz_record(struct rmap_item *rmap_item)
-{
-	struct rb_root *root;
-	struct rb_node **new;
-	struct rb_node *parent = NULL;
-	struct hotzone *hotzone;
-
-	root = hot_zone_table;
-	new = &root->rb_node;
-
-	while(*new)
-	{
-		hotzone = rb_entry(*new, struct hotzone, node);
-		parent = *new;
-		if(rmap_item->gfn > hotzone->gfn)
-			new = &parent->rb_right;
-		else if(rmap_item->gfn < hotzone->gfn)
-			new = &parent->rb_left;
-		else
-		{
-			hotzone->sum += rmap_item->number;
-			hotzone->count++;
-			// TODO: do better log here.
-			if(hotzone->count == 2)
-				hz_size++;
-
-			return;
-		}
-	}
-
-	hotzone = kmalloc(sizeof(struct hotzone), GFP_KERNEL);
-	hotzone->count = 1;
-	hotzone->gfn = rmap_item->gfn;
-	hotzone->sum = rmap_item->number;
-	rb_link_node(&hotzone->node, parent, new);
-	rb_insert_color(&hotzone->node, root);
-}
-
 /*
  * cmp_and_merge_page - first see if page can be merged into the stable tree;
  * if not, compare checksum to previous and if it's the same, see if page can
@@ -1723,7 +1532,6 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			return;
 	}
 
-	/* We first start with searching the page inside the stable tree */
 	kpage = stable_tree_search(page);
 	if (kpage == page && rmap_item->head == stable_node) {
 		put_page(kpage);
@@ -1739,7 +1547,7 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * The page was successfully merged:
 			 * add its rmap_item to the stable tree.
 			 */
-			// HZ ksm
+			/* HZ KSM */
 			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
 				hit++;
 			lock_page(kpage);
@@ -1764,8 +1572,7 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 	}
 
 	tree_rmap_item =
-		/* return ptr to rmap_item if identical page found, NULL otherwise */
-		unstable_tree_search_insert(rmap_item, page, &tree_page);
+		unstable_tree_search_insert(rmap_item, page, &tree_page);	/* return ptr to rmap_item if identical page found, NULL otherwise */
 	if (tree_rmap_item) {
 		kpage = try_to_merge_two_pages(rmap_item, page,
 						tree_rmap_item, tree_page);
@@ -1828,8 +1635,6 @@ static struct rmap_item *get_next_rmap_item(struct mm_slot *mm_slot,
 	return rmap_item;
 }
 
-int total_rmap = 0;
-
 static void hotzone_show(void)
 {
 	struct rmap_item *rmap_item;
@@ -1853,7 +1658,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		return NULL;
 
 	slot = ksm_scan.mm_slot;
-	// flush unstable tree .
+	/* flush unstable tree */
 	if (slot == &ksm_mm_head) {
 		/*
 		 * A number of pages can hang around indefinitely on per-cpu
@@ -1873,7 +1678,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		 * those moved out to the migrate_nodes list can accumulate:
 		 * so prune them once before each full scan.
 		 */
-		// will not executed.
+		/*  not executed */
 		if (!ksm_merge_across_nodes) {
 			struct stable_node *stable_node;
 			struct list_head *this, *next;
@@ -1888,17 +1693,12 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 				cond_resched();
 			}
 		}
-		// nid = 0; nid < 1; nid++
 		for (nid = 0; nid < ksm_nr_node_ids; nid++)
 			root_unstable_tree[nid] = RB_ROOT;
 
 		spin_lock(&ksm_mmlist_lock);
-		/* get the next slot in the mm_slot's list,
-		 * done by list_entry
-		 */
-		slot = list_entry(slot->mm_list.next, struct mm_slot, mm_list);
-		/* change to another VM */
-		ksm_scan.mm_slot = slot;
+		slot = list_entry(slot->mm_list.next, struct mm_slot, mm_list);	 /* get next slot in the mm_slot's list */
+		ksm_scan.mm_slot = slot;	/* switch to another VM */
 		spin_unlock(&ksm_mmlist_lock);
 		/*
 		 * Although we tested list_empty() above, a racing __ksm_exit
@@ -2000,502 +1800,23 @@ next_mm:
 	if (slot != &ksm_mm_head)
 		goto next_mm;
 
-	ksm_scan.seqnr++;	/* one round is finished */
+	ksm_scan.seqnr++;
 	if(ksm_scan.seqnr == 1 && define_prescan == 0) {
 		define_prescan = 1;
 		scan_hot_zone = 1;
 	}
 
 	time_flag = 1;
-	hz_size = 0;
 
-	/* dumping hotzone information */
-	
+	/* dumping hotzone information */	
 	if(ksm_scan.seqnr > 0)  {
 		printk("Start dumping hotzone information in hotzone_show() after round %lu :\n", ksm_scan.seqnr);
 		hotzone_show();	
 	}
-	
-	printk("(potential) hotzone size in round #%lu: %d\n", ksm_scan.seqnr, hz_size);
-	printk("total rmap_item in hotzone: %d\n", total_rmap);
 
 	return NULL;
 }
 
-/* hz ksm */
-static void collect_page_info(struct rmap_item *rmap_item)
-{
-	struct gpa_node *gpa_node, *search_node;
-	struct list_head *head;
-
-	if(rmap_item->gfn <= 3686)
-		head = &gpa_node_head1;
-	else if(rmap_item->gfn >= 3687 && rmap_item->gfn <= 7373)
-		head = &gpa_node_head1a;
-	else if(rmap_item->gfn >= 7374 && rmap_item->gfn <= 11060)
-		head = &gpa_node_head1b;
-	else if(rmap_item->gfn >= 11061 && rmap_item->gfn <= 14747)
-        head = &gpa_node_head1c;
-
-	else if(rmap_item->gfn >= 14748 && rmap_item->gfn <= 18434)
-		head = &gpa_node_head2;
-	else if(rmap_item->gfn >= 18435 && rmap_item->gfn <= 22121)
-		head = &gpa_node_head2a;
-	else if(rmap_item->gfn >= 22122 && rmap_item->gfn <= 25808)
-		head = &gpa_node_head2b;
-	else if(rmap_item->gfn >= 25809 && rmap_item->gfn <= 29495)
-		head = &gpa_node_head2c;
-
-    else if(rmap_item->gfn >= 29496 && rmap_item->gfn <= 33182)
-		head = &gpa_node_head3;
-	else if(rmap_item->gfn >= 33183 && rmap_item->gfn <= 36869)
-		head = &gpa_node_head3a;
-	else if(rmap_item->gfn >= 36870 && rmap_item->gfn <= 40556)
-		head = &gpa_node_head3b;
-	else if(rmap_item->gfn >= 40557 && rmap_item->gfn <= 44243)
-		head = &gpa_node_head3c;
-
-    else if(rmap_item->gfn >= 44244 && rmap_item->gfn <= 47930)
-		head = &gpa_node_head4;
-	else if(rmap_item->gfn >= 47931 && rmap_item->gfn <= 51617)
-		head = &gpa_node_head4a;
-	else if(rmap_item->gfn >= 51618 && rmap_item->gfn <= 55304)
-		head = &gpa_node_head4b;
-	else if(rmap_item->gfn >= 55305 && rmap_item->gfn <= 58991)
-		head = &gpa_node_head4c;
-
-	else if(rmap_item->gfn >= 58992 && rmap_item->gfn <= 62678)
-		head = &gpa_node_head5;
-	else if(rmap_item->gfn >= 62679 && rmap_item->gfn <= 66365)
-		head = &gpa_node_head5a;
-	else if(rmap_item->gfn >= 66366 && rmap_item->gfn <= 70052)
-		head = &gpa_node_head5b;
-	else if(rmap_item->gfn >= 70053 && rmap_item->gfn <= 73739)
-		head = &gpa_node_head5c;
-
-	else if(rmap_item->gfn >= 73740 && rmap_item->gfn <= 77426)
-		head = &gpa_node_head6;
-	else if(rmap_item->gfn >= 77427 && rmap_item->gfn <= 81113)
-		head = &gpa_node_head6a;
-	else if(rmap_item->gfn >= 81114 && rmap_item->gfn <= 84800)
-		head = &gpa_node_head6b;
-	else if(rmap_item->gfn >= 84801 && rmap_item->gfn <= 88487)
-		head = &gpa_node_head6c;
-
-	else if(rmap_item->gfn >= 88488 && rmap_item->gfn <= 92174)
-		head = &gpa_node_head7;
-	else if(rmap_item->gfn >= 92175 && rmap_item->gfn <= 95861)
-		head = &gpa_node_head7a;
-	else if(rmap_item->gfn >= 95862 && rmap_item->gfn <= 99548)
-		head = &gpa_node_head7b;
-	else if(rmap_item->gfn >= 99549 && rmap_item->gfn <= 103235)
-		head = &gpa_node_head7c;
-
-    else if(rmap_item->gfn >= 103236 && rmap_item->gfn <= 106922)
-		head = &gpa_node_head8;
-	else if(rmap_item->gfn >= 106923 && rmap_item->gfn <= 110609)
-		head = &gpa_node_head8a;
-	else if(rmap_item->gfn >= 110610 && rmap_item->gfn <= 114296)
-		head = &gpa_node_head8b;
-	else if(rmap_item->gfn >= 114297 && rmap_item->gfn <= 117983)
-		head = &gpa_node_head8c;
-
-	else if(rmap_item->gfn >= 117984 && rmap_item->gfn <= 121670)
-		head = &gpa_node_head9;
-	else if(rmap_item->gfn >= 121671 && rmap_item->gfn <= 125357)
-		head = &gpa_node_head9a;
-	else if(rmap_item->gfn >= 125358 && rmap_item->gfn <= 129044)
-		head = &gpa_node_head9b;
-	else if(rmap_item->gfn >= 129045 && rmap_item->gfn <= 132731)
-		head = &gpa_node_head9c;
-
-    else if(rmap_item->gfn >= 132732 && rmap_item->gfn <= 136418)
-		head = &gpa_node_head10;
-	else if(rmap_item->gfn >= 136419 && rmap_item->gfn <= 140105)
-		head = &gpa_node_head10a;
-	else if(rmap_item->gfn >= 140106 && rmap_item->gfn <= 143792)
-		head = &gpa_node_head10b;
-	else if(rmap_item->gfn >= 143793 && rmap_item->gfn <= 147479)
-		head = &gpa_node_head10c;
-
-	else if(rmap_item->gfn >= 147480 && rmap_item->gfn <= 151166)
-		head = &gpa_node_head11;
-	else if(rmap_item->gfn >= 151167 && rmap_item->gfn <= 154850)
-		head = &gpa_node_head11a;
-	else if(rmap_item->gfn >= 154851 && rmap_item->gfn <= 158540)
-		head = &gpa_node_head11b;
-	else if(rmap_item->gfn >= 158541 && rmap_item->gfn <= 162227)
-		head = &gpa_node_head11c;
-
-	else if(rmap_item->gfn >= 162228 && rmap_item->gfn <= 165914)
-		head = &gpa_node_head12;
-	else if(rmap_item->gfn >= 165915 && rmap_item->gfn <= 169601)
-		head = &gpa_node_head12a;
-	else if(rmap_item->gfn >= 169602 && rmap_item->gfn <= 173288)
-		head = &gpa_node_head12b;
-	else if(rmap_item->gfn >= 173289 && rmap_item->gfn <= 176975)
-		head = &gpa_node_head12c;
-
-	else if(rmap_item->gfn >= 176976 && rmap_item->gfn <= 180662)
-		head = &gpa_node_head13;
-	else if(rmap_item->gfn >= 180663 && rmap_item->gfn <= 184349)
-		head = &gpa_node_head13a;
-	else if(rmap_item->gfn >= 184350 && rmap_item->gfn <= 188036)
-		head = &gpa_node_head13b;
-	else if(rmap_item->gfn >= 188037 && rmap_item->gfn <= 191723)
-		head = &gpa_node_head13c;
-
-	else if(rmap_item->gfn >= 191724 && rmap_item->gfn <= 195410)
-		head = &gpa_node_head14;
-	else if(rmap_item->gfn >= 195411 && rmap_item->gfn <= 199097)
-		head = &gpa_node_head14a;
-	else if(rmap_item->gfn >= 199098 && rmap_item->gfn <= 202784)
-		head = &gpa_node_head14b;
-	else if(rmap_item->gfn >= 202785 && rmap_item->gfn <= 206471)
-		head = &gpa_node_head14c;
-
-	else if(rmap_item->gfn >= 206472 && rmap_item->gfn <= 210158)
-		head = &gpa_node_head15;
-	else if(rmap_item->gfn >= 210159 && rmap_item->gfn <= 213845)
-		head = &gpa_node_head15a;
-	else if(rmap_item->gfn >= 213846 && rmap_item->gfn <= 217532)
-		head = &gpa_node_head15b;
-	else if(rmap_item->gfn >= 217533 && rmap_item->gfn <= 221219)
-		head = &gpa_node_head15c;
-
-	else if(rmap_item->gfn >= 221220 && rmap_item->gfn <= 224906)
-		head = &gpa_node_head16;
-	else if(rmap_item->gfn >= 224907 && rmap_item->gfn <= 228593)
-		head = &gpa_node_head16a;
-	else if(rmap_item->gfn >= 228594 && rmap_item->gfn <= 232280)
-		head = &gpa_node_head16b;
-	else if(rmap_item->gfn >= 232281 && rmap_item->gfn <= 235967)
-		head = &gpa_node_head16c;
-
-	else if(rmap_item->gfn >= 235968 && rmap_item->gfn <= 239654)
-		head = &gpa_node_head17;
-	else if(rmap_item->gfn >= 239655 && rmap_item->gfn <= 243341)
-		head = &gpa_node_head17a;
-	else if(rmap_item->gfn >= 243342 && rmap_item->gfn <= 247028)
-		head = &gpa_node_head17b;
-	else if(rmap_item->gfn >= 247029 && rmap_item->gfn <= 250715)
-		head = &gpa_node_head17c;
-
-	else if(rmap_item->gfn >= 250716 && rmap_item->gfn <= 254402)
-		head = &gpa_node_head18;
-	else if(rmap_item->gfn >= 254403 && rmap_item->gfn <= 258089)
-		head = &gpa_node_head18a;
-	else if(rmap_item->gfn >= 258090 && rmap_item->gfn <= 261888)
-		head = &gpa_node_head18b;
-	else if(rmap_item->gfn >= 999424 && rmap_item->gfn <= 1003110)
-		head = &gpa_node_head18c;
-
-	else if(rmap_item->gfn >= 1003111 && rmap_item->gfn <= 1006797)
-		head = &gpa_node_head19;
-	else if(rmap_item->gfn >= 1006798 && rmap_item->gfn <= 1010484)
-		head = &gpa_node_head19a;
-	else if(rmap_item->gfn >= 1010485 && rmap_item->gfn <= 1014171)
-		head = &gpa_node_head19b;
-	else if(rmap_item->gfn >= 1014172 && rmap_item->gfn <= 1017858)
-		head = &gpa_node_head19c;
-
-	else if(rmap_item->gfn >= 1017859 && rmap_item->gfn <= 1021545)
-		head = &gpa_node_head20;
-	else if(rmap_item->gfn >= 1021546 && rmap_item->gfn <= 1025232)
-		head = &gpa_node_head20a;
-	else if(rmap_item->gfn >= 1025233 && rmap_item->gfn <= 1028919)
-		head = &gpa_node_head20b;
-	else
-		head = &gpa_node_head20c;
-
-	if(list_empty(head))
-		goto create;
-
-	list_for_each_entry(search_node, head, link) {
-		if(search_node->gfn == rmap_item->gfn)
-		{
-			/* insert rmap_item at gpa_node's hlist head */
-			search_node->count++;
-			search_node->sum += rmap_item->number;
-			hlist_add_head(&rmap_item->gfnhlist, &search_node->hlist);
-			return;
-		}
-	}
-
-create:
-	gpa_node = alloc_gpa_node();
-	INIT_HLIST_HEAD(&gpa_node->hlist);
-	gpa_node->gfn = rmap_item->gfn;
-	gpa_node->count = 1;
-	gpa_node->sum = rmap_item->number;
-	/* insert rmap_item at gpa_node's hlist head */
-	hlist_add_head(&rmap_item->gfnhlist, &gpa_node->hlist);
-	/* insert arg1 after arg2 */
-	list_add(&gpa_node->link, head);
-
-}
-
-/* 
- * go through each list and check each search_node is in hot zone or not,
- * and then move them to corresponding lists of either
- * hot_zone_node or rest_gpa_node_head
- */
-static void table_lookup(struct list_head *head)
-{
-	int find;
-	struct gpa_node *search_node, *next;
-
-	list_for_each_entry_safe(search_node, next, head, link) {
-		find = 0;
-		if(intable(search_node->gfn)) {
-			hit++;
-			search_node->in_hot_zone = 1;
-			list_move(&search_node->link, &hot_zone_node);
-			find = 1;
-		}
-		if(!find) {
-			search_node->in_hot_zone = 0;
-			list_move(&search_node->link, &rest_gpa_node_head);
-		}
-	}
-	/*
-	list_for_each_entry_safe(search_node, next, head, link) {
-		struct rb_root *root;
-		struct rb_node **new;
-		struct rb_node *parent;
-		struct hotzone *hotzone;
-		find = 0;
-
-		root = hot_zone_table;
-		new = &root->rb_node;
-		parent = NULL;
-
-		while(*new)
-		{
-			hotzone = rb_entry(*new, struct hotzone, node);
-			parent = *new;
-
-			if(search_node->gfn > hotzone->gfn)
-				new = &parent->rb_right;
-			else if(search_node->gfn < hotzone->gfn)
-				new = &parent->rb_left;
-			else
-			{	
-				
-				// if(hotzone->vm1 == ksm_scan.seqnr && hotzone->vm2 == ksm_scan.seqnr)
-				// {
-				// 	search_node->in_hot_zone = 1;
-				// 	list_move(&search_node->link, &hot_zone_node);
-				// 	find = 1;
-				// }
-
-				if(hotzone->count >= 2) {
-					search_node->in_hot_zone = 1;
-					list_move(&search_node->link, &hot_zone_node);
-					find = 1;
-				}
-				break;
-			}
-		}
-
-		if(!find)
-		{
-			search_node->in_hot_zone = 0;
-			list_move(&search_node->link, &rest_gpa_node_head);
-		}
-	}
-	*/
-}
-
-/* hz ksm */
-static void define_prescan_section(void)
-{
-	struct list_head *head;
-
-	head = &gpa_node_head1;
-	table_lookup(head);
-	head = &gpa_node_head1a;
-	table_lookup(head);
-	head = &gpa_node_head1b;
-	table_lookup(head);
-	head = &gpa_node_head1c;
-	table_lookup(head);
-
-	head = &gpa_node_head2;
-	table_lookup(head);
-	head = &gpa_node_head2a;
-	table_lookup(head);
-	head = &gpa_node_head2b;
-	table_lookup(head);
-	head = &gpa_node_head2c;
-	table_lookup(head);
-
-	head = &gpa_node_head3;
-	table_lookup(head);
-	head = &gpa_node_head3a;
-	table_lookup(head);
-	head = &gpa_node_head3b;
-	table_lookup(head);
-	head = &gpa_node_head3c;
-	table_lookup(head);
-
-	head = &gpa_node_head4;
-	table_lookup(head);
-	head = &gpa_node_head4a;
-	table_lookup(head);
-	head = &gpa_node_head4b;
-	table_lookup(head);
-	head = &gpa_node_head4c;
-	table_lookup(head);
-
-	head = &gpa_node_head5;
-	table_lookup(head);
-	head = &gpa_node_head5a;
-	table_lookup(head);
-	head = &gpa_node_head5b;
-	table_lookup(head);
-	head = &gpa_node_head5c;
-	table_lookup(head);
-
-	head = &gpa_node_head6;
-	table_lookup(head);
-	head = &gpa_node_head6a;
-	table_lookup(head);
-	head = &gpa_node_head6b;
-	table_lookup(head);
-	head = &gpa_node_head6c;
-	table_lookup(head);
-
-	head = &gpa_node_head7;
-	table_lookup(head);
-	head = &gpa_node_head7a;
-	table_lookup(head);
-	head = &gpa_node_head7b;
-	table_lookup(head);
-	head = &gpa_node_head7c;
-	table_lookup(head);
-
-	head = &gpa_node_head8;
-	table_lookup(head);
-	head = &gpa_node_head8a;
-	table_lookup(head);
-	head = &gpa_node_head8b;
-	table_lookup(head);
-	head = &gpa_node_head8c;
-	table_lookup(head);
-
-	head = &gpa_node_head9;
-	table_lookup(head);
-	head = &gpa_node_head9a;
-	table_lookup(head);
-	head = &gpa_node_head9b;
-	table_lookup(head);
-	head = &gpa_node_head9c;
-	table_lookup(head);
-
-	head = &gpa_node_head10;
-	table_lookup(head);
-	head = &gpa_node_head10a;
-	table_lookup(head);
-	head = &gpa_node_head10b;
-	table_lookup(head);
-	head = &gpa_node_head10c;
-	table_lookup(head);
-
-	head = &gpa_node_head11;
-	table_lookup(head);
-	head = &gpa_node_head11a;
-	table_lookup(head);
-	head = &gpa_node_head11b;
-	table_lookup(head);
-	head = &gpa_node_head11c;
-	table_lookup(head);
-
-	head = &gpa_node_head12;
-	table_lookup(head);
-	head = &gpa_node_head12a;
-	table_lookup(head);
-	head = &gpa_node_head12b;
-	table_lookup(head);
-	head = &gpa_node_head12c;
-	table_lookup(head);
-
-	head = &gpa_node_head13;
-	table_lookup(head);
-	head = &gpa_node_head13a;
-	table_lookup(head);
-	head = &gpa_node_head13b;
-	table_lookup(head);
-	head = &gpa_node_head13c;
-	table_lookup(head);
-
-	head = &gpa_node_head14;
-	table_lookup(head);
-	head = &gpa_node_head14a;
-	table_lookup(head);
-	head = &gpa_node_head14b;
-	table_lookup(head);
-	head = &gpa_node_head14c;
-	table_lookup(head);
-
-	head = &gpa_node_head15;
-	table_lookup(head);
-	head = &gpa_node_head15a;
-	table_lookup(head);
-	head = &gpa_node_head15b;
-	table_lookup(head);
-	head = &gpa_node_head15c;
-	table_lookup(head);
-
-	head = &gpa_node_head16;
-	table_lookup(head);
-	head = &gpa_node_head16a;
-	table_lookup(head);
-	head = &gpa_node_head16b;
-	table_lookup(head);
-	head = &gpa_node_head16c;
-	table_lookup(head);
-
-	head = &gpa_node_head17;
-	table_lookup(head);
-	head = &gpa_node_head17a;
-	table_lookup(head);
-	head = &gpa_node_head17b;
-	table_lookup(head);
-	head = &gpa_node_head17c;
-	table_lookup(head);
-
-	head = &gpa_node_head18;
-	table_lookup(head);
-	head = &gpa_node_head18a;
-	table_lookup(head);
-	head = &gpa_node_head18b;
-	table_lookup(head);
-	head = &gpa_node_head18c;
-	table_lookup(head);
-
-	head = &gpa_node_head19;
-	table_lookup(head);
-	head = &gpa_node_head19a;
-	table_lookup(head);
-	head = &gpa_node_head19b;
-	table_lookup(head);
-	head = &gpa_node_head19c;
-	table_lookup(head);
-
-	head = &gpa_node_head20;
-	table_lookup(head);
-	head = &gpa_node_head20a;
-	table_lookup(head);
-	head = &gpa_node_head20b;
-	table_lookup(head);
-	head = &gpa_node_head20c;
-	table_lookup(head);
-}
-
-
-/* hz ksm */
-// struct gpa_node *cursor = NULL;
 struct rmap_item *cursor = NULL;
 static void hot_zone_scan(unsigned int *scan_npages)
 {
@@ -2503,7 +1824,6 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	struct vm_area_struct *vma;
 	struct page *page;
 	struct rmap_item *rmap_item;
-	//struct gpa_node *gpa_node;
 	unsigned int number;
 
 	number = (*scan_npages)*2;
@@ -2547,7 +1867,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	struct vm_area_struct *vma;
 	struct page *page;
 	struct rmap_item *rmap_item;
-	//struct gpa_node *gpa_node;
 
 	if(cursor == NULL)
 		rmap_item = list_first_entry(&remaining_rmap, struct rmap_item, link);
@@ -2581,100 +1900,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 		put_page(page);
 	}
 }
-/*
-static void hot_zone_scan(unsigned int *scan_npages)
-{
-	struct mm_struct *mm;
-	struct vm_area_struct *vma;
-	struct page *page;
-	struct rmap_item *rmap_item;
-	struct gpa_node *gpa_node;
-
-	if(cursor == NULL)
-		gpa_node = list_first_entry(&hot_zone_node, struct gpa_node, link);
-	else
-		gpa_node = cursor;
-
-	gpa_node = list_prepare_entry(gpa_node, &hot_zone_node, link);
-	list_for_each_entry_continue(gpa_node, &hot_zone_node, link) {
-
-		(*scan_npages)--;
-		if(*scan_npages == 0)
-		{
-			cursor = gpa_node;
-			break;
-		}
-
-		if(list_is_last(&gpa_node->link, &hot_zone_node))
-		{
-			scan_hot_zone = 0;
-			scan_remain = 1;	
-			cursor = NULL;
-		}
-
-		if(gpa_node->in_hot_zone)
-		{
-			//printk("gfn %lu:", gpa_node->gfn);
-			hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
-				total_rmap++;
-				//printk(" #VM = %d, gfn = %lu", rmap_item->number, rmap_item->gfn);
-				//printk(" hva %lu \n", rmap_item->address);
-				mm = rmap_item->mm;
-				down_read(&mm->mmap_sem);
-				vma = find_vma(mm, rmap_item->address);
-				page = follow_page(vma, rmap_item->address, FOLL_GET);
-				up_read(&mm->mmap_sem);
-
-				cmp_and_merge_page(page, rmap_item);
-				put_page(page);
-			}
-		}
-	}
-}
-
-static void remain_zone_scan(unsigned int *scan_npages)
-{
-	struct mm_struct *mm;
-	struct vm_area_struct *vma;
-	struct page *page;
-	struct rmap_item *rmap_item;
-	struct gpa_node *gpa_node;
-
-	if(cursor == NULL)
-		gpa_node = list_first_entry(&rest_gpa_node_head, struct gpa_node, link);
-	else
-		gpa_node = cursor;
-
-	gpa_node = list_prepare_entry(gpa_node, &rest_gpa_node_head, link);
-	list_for_each_entry_continue(gpa_node, &rest_gpa_node_head, link) {
-
-		(*scan_npages)--;
-		if(*scan_npages == 0)
-		{
-			cursor = gpa_node;
-			break;
-		}
-
-		if(list_is_last(&gpa_node->link, &rest_gpa_node_head))
-		{
-			scan_remain = 0;
-			cursor = NULL;
-		}
-
-		hlist_for_each_entry(rmap_item, &gpa_node->hlist, gfnhlist) {
-			mm = rmap_item->mm;
-			down_read(&mm->mmap_sem);
-			vma = find_vma(mm, rmap_item->address);
-			page = follow_page(vma, rmap_item->address, FOLL_GET);
-			up_read(&mm->mmap_sem);
-
-			cmp_and_merge_page(page, rmap_item);
-			put_page(page);
-		}
-	}
-}
-*/
-
 
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
@@ -2765,7 +1990,7 @@ static int ksm_scan_thread(void *nothing)
 
 	while (!kthread_should_stop()) {
 		mutex_lock(&ksm_thread_mutex);
-		// hz ksm time measurement
+		/* time measurement */
 		do_gettimeofday(&before);
 		wait_while_offlining();
 		if (ksmd_should_run())
@@ -3203,7 +2428,7 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return sprintf(buf, "%lu\n", ksm_run);
 }
 
-// hz ksm
+/* HZ KSM */
 static void deletelist(struct list_head *head)
 {
 	struct rmap_item *delete, *next;
@@ -3213,182 +2438,17 @@ static void deletelist(struct list_head *head)
 	}
 }
 
-/*for new ksm*/
+/* HZ SKM clean */
 static void clean_gpa_node_list(void)
 {
+	struct list_head *head;
+
 	define_prescan = 0;
 	scan_hot_zone = 0;
 	scan_remain = 0;
 	ksm_time = 0, break_time = 0, time_flag = 0, print_vma = 0;
-	hz_size = 0, total_rmap = 0;
 	cursor = NULL;
-	struct list_head *head;
 
-	head = &gpa_node_head1;
-	deletelist(head);
-	head = &gpa_node_head1a;
-	deletelist(head);
-	head = &gpa_node_head1b;
-	deletelist(head);
-	head = &gpa_node_head1c;
-	deletelist(head);
-	head = &gpa_node_head2;
-	deletelist(head);
-	head = &gpa_node_head2a;
-	deletelist(head);
-	head = &gpa_node_head2b;
-	deletelist(head);
-	head = &gpa_node_head2c;
-	deletelist(head);
-	head = &gpa_node_head3;
-	deletelist(head);
-	head = &gpa_node_head3a;
-	deletelist(head);
-	head = &gpa_node_head3b;
-	deletelist(head);
-	head = &gpa_node_head3c;
-	deletelist(head);
-	head = &gpa_node_head4;
-	deletelist(head);
-	head = &gpa_node_head4a;
-	deletelist(head);
-	head = &gpa_node_head4b;
-	deletelist(head);
-	head = &gpa_node_head4c;
-	deletelist(head);
-	head = &gpa_node_head5;
-	deletelist(head);
-	head = &gpa_node_head5a;
-	deletelist(head);
-	head = &gpa_node_head5b;
-	deletelist(head);
-	head = &gpa_node_head5c;
-	deletelist(head);
-	head = &gpa_node_head6;
-	deletelist(head);
-	head = &gpa_node_head6a;
-	deletelist(head);
-	head = &gpa_node_head6b;
-	deletelist(head);
-	head = &gpa_node_head6c;
-	deletelist(head);
-	head = &gpa_node_head7;
-	deletelist(head);
-	head = &gpa_node_head7a;
-	deletelist(head);
-	head = &gpa_node_head7b;
-	deletelist(head);
-	head = &gpa_node_head7c;
-	deletelist(head);
-	head = &gpa_node_head8;
-	deletelist(head);
-	head = &gpa_node_head8a;
-	deletelist(head);
-	head = &gpa_node_head8b;
-	deletelist(head);
-	head = &gpa_node_head8c;
-	deletelist(head);
-	head = &gpa_node_head9;
-	deletelist(head);
-	head = &gpa_node_head9a;
-	deletelist(head);
-	head = &gpa_node_head9b;
-	deletelist(head);
-	head = &gpa_node_head9c;
-	deletelist(head);
-	head = &gpa_node_head10;
-	deletelist(head);
-	head = &gpa_node_head10a;
-	deletelist(head);
-	head = &gpa_node_head10b;
-	deletelist(head);
-	head = &gpa_node_head10c;
-	deletelist(head);
-	head = &gpa_node_head11;
-	deletelist(head);
-	head = &gpa_node_head11a;
-	deletelist(head);
-	head = &gpa_node_head11b;
-	deletelist(head);
-	head = &gpa_node_head11c;
-	deletelist(head);
-	head = &gpa_node_head12;
-	deletelist(head);
-	head = &gpa_node_head12a;
-	deletelist(head);
-	head = &gpa_node_head12b;
-	deletelist(head);
-	head = &gpa_node_head12c;
-	deletelist(head);
-	head = &gpa_node_head13;
-	deletelist(head);
-	head = &gpa_node_head13a;
-	deletelist(head);
-	head = &gpa_node_head13b;
-	deletelist(head);
-	head = &gpa_node_head13c;
-	deletelist(head);
-	head = &gpa_node_head14;
-	deletelist(head);
-	head = &gpa_node_head14a;
-	deletelist(head);
-	head = &gpa_node_head14b;
-	deletelist(head);
-	head = &gpa_node_head14c;
-	deletelist(head);
-	head = &gpa_node_head15;
-	deletelist(head);
-	head = &gpa_node_head15a;
-	deletelist(head);
-	head = &gpa_node_head15b;
-	deletelist(head);
-	head = &gpa_node_head15c;
-	deletelist(head);
-	head = &gpa_node_head16;
-	deletelist(head);
-	head = &gpa_node_head16a;
-	deletelist(head);
-	head = &gpa_node_head16b;
-	deletelist(head);
-	head = &gpa_node_head16c;
-	deletelist(head);
-	head = &gpa_node_head17;
-	deletelist(head);
-	head = &gpa_node_head17a;
-	deletelist(head);
-	head = &gpa_node_head17b;
-	deletelist(head);
-	head = &gpa_node_head17c;
-	deletelist(head);
-	head = &gpa_node_head18;
-	deletelist(head);
-	head = &gpa_node_head18a;
-	deletelist(head);
-	head = &gpa_node_head18b;
-	deletelist(head);
-	head = &gpa_node_head18c;
-	deletelist(head);
-	head = &gpa_node_head19;
-	deletelist(head);
-	head = &gpa_node_head19a;
-	deletelist(head);
-	head = &gpa_node_head19b;
-	deletelist(head);
-	head = &gpa_node_head19c;
-	deletelist(head);
-	head = &gpa_node_head20;
-	deletelist(head);
-	head = &gpa_node_head20a;
-	deletelist(head);
-	head = &gpa_node_head20b;
-	deletelist(head);
-	head = &gpa_node_head20c;
-	deletelist(head);
-
-	head = &hot_zone_node;
-	deletelist(head);
-	head = &rest_gpa_node_head;
-	deletelist(head);
 	head = &hot_zone_rmap;
 	deletelist(head);
 	head = &remaining_rmap;
