@@ -185,6 +185,7 @@ struct rmap_item {
 	struct mm_struct *mm;
 	unsigned long address;		/* + low bits used for flags below */
 	unsigned int oldchecksum;	/* when unstable */
+	unsigned int unchanged;		/* how many round checksum haven't chagned */
 	union {
 		struct rb_node node;	/* when node of unstable tree */
 		struct {		/* when listed from stable tree */
@@ -1567,8 +1568,12 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 	 */
 	checksum = calc_checksum(page);
 	if (rmap_item->oldchecksum != checksum) {
+		rmap_item->unchanged = 0;
 		rmap_item->oldchecksum = checksum;
 		return;
+	}
+	else {
+		rmap_item->unchanged += 1;
 	}
 
 	tree_rmap_item =
@@ -1640,7 +1645,7 @@ static void hotzone_show(void)
 	struct rmap_item *rmap_item;
 
 	list_for_each_entry(rmap_item, &hot_zone_rmap, link) {
-		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
+		printk("VM#%d, GFN = %lu, unchanged = %u\n", rmap_item->number, rmap_item->gfn, rmap_item->unchanged);
 	}
 	printk("Finished dumping hotzone information.\n");
 }
@@ -1826,17 +1831,15 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	struct rmap_item *rmap_item;
 	unsigned int number;
 
-	number = (*scan_npages)*2;
-
 	if(cursor == NULL)
 		rmap_item = list_first_entry(&hot_zone_rmap, struct rmap_item, link);
 	else
 		rmap_item = cursor;
 
+	number = (*scan_npages + 1)*2;
 	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
 	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
 	
-		// printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
 		if(--number == 0)
 		{
 			cursor = rmap_item;
@@ -1867,17 +1870,18 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	struct vm_area_struct *vma;
 	struct page *page;
 	struct rmap_item *rmap_item;
+	unsigned int number;
 
 	if(cursor == NULL)
 		rmap_item = list_first_entry(&remaining_rmap, struct rmap_item, link);
 	else
 		rmap_item = cursor;
 
+	number = *scan_npages + 1;
 	rmap_item = list_prepare_entry(rmap_item, &remaining_rmap, link);
 	list_for_each_entry_continue(rmap_item, &remaining_rmap, link) {
-
-		(*scan_npages)--;
-		if(*scan_npages == 0)
+		
+		if(--number == 0)
 		{
 			cursor = rmap_item;
 			break;
@@ -1919,7 +1923,8 @@ static void ksm_do_scan(unsigned int scan_npages)
 			goto scan_hot;
 		if(scan_remain && ksm_scan.seqnr == 1)
 			goto scan_re;
-	
+
+		/*
 		if(print_vma == 0)
 		{
 			printk("Information about VMA of each VM:\n");
@@ -1927,6 +1932,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			printk("========================================\n");
 			print_vma = 1;
 		}
+		*/
 		
 		rmap_item = scan_get_next_rmap_item(&page);
 		if (!rmap_item)
@@ -1938,6 +1944,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			cursor = NULL;
 			find = 0;
 			rmap_item->number = 0;
+			rmap_item->unchanged = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
 			if(intable(rmap_item->gfn)) {
@@ -2438,7 +2445,7 @@ static void deletelist(struct list_head *head)
 	}
 }
 
-/* HZ SKM clean */
+/* HZ KSM clean */
 static void clean_gpa_node_list(void)
 {
 	struct list_head *head;
