@@ -198,9 +198,10 @@ struct rmap_item {
 };
 
 /* For hot zone */
-int define_prescan = 0;
 int scan_hot_zone = 0;
 int scan_remain = 0;
+int clean = 0;
+struct rmap_item *cursor = NULL;
 
 /* For time analysis */
 struct timeval before, after;
@@ -1644,10 +1645,23 @@ static void hotzone_show(void)
 {
 	struct rmap_item *rmap_item;
 
+	printk("Start dumping hotzone information:\n");
 	list_for_each_entry(rmap_item, &hot_zone_rmap, link) {
 		printk("VM#%d, GFN = %lu, unchanged = %u\n", rmap_item->number, rmap_item->gfn, rmap_item->unchanged);
 	}
-	printk("Finished dumping hotzone information.\n");
+	printk("=========Finish dumping hotzone information.=========\n");
+}
+
+/* HZ KSM */
+static void deletelist(struct list_head *head)
+{
+	struct rmap_item *delete, *next;
+
+	list_for_each_entry_safe(delete, next, head, link) {
+		list_del_init(&delete->link);
+	}
+	printk("List empty? : %d\n", list_empty(head));
+	INIT_LIST_HEAD(head);
 }
 
 struct vm_area_struct *last_vma = NULL;
@@ -1806,23 +1820,20 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;
-	if(ksm_scan.seqnr == 1 && define_prescan == 0) {
-		define_prescan = 1;
+	if(ksm_scan.seqnr == 1) 
 		scan_hot_zone = 1;
-	}
 
-	time_flag = 1;
-
-	/* dumping hotzone information */	
+	/* dumping hotzone information */
+	/*
 	if(ksm_scan.seqnr > 0)  {
 		printk("Start dumping hotzone information in hotzone_show() after round %lu :\n", ksm_scan.seqnr);
 		hotzone_show();	
 	}
-
+	*/
+	time_flag = 1;
 	return NULL;
 }
 
-struct rmap_item *cursor = NULL;
 static void hot_zone_scan(unsigned int *scan_npages)
 {
 	struct mm_struct *mm;
@@ -1891,6 +1902,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 		{
 			scan_remain = 0;
 			cursor = NULL;
+			clean = 1;
 			ksm_scan.seqnr++;
 		}
 
@@ -1911,17 +1923,16 @@ static void remain_zone_scan(unsigned int *scan_npages)
  */
 static void ksm_do_scan(unsigned int scan_npages)
 {
-	int find;
-	struct rmap_item *rmap_item, *cursor;
+	struct rmap_item *rmap_item;
 	struct page *uninitialized_var(page);
 	unsigned long hva;
 
 	while (scan_npages-- && likely(!freezing(current))) {
 		cond_resched();
 		/* hz ksm */
-		if(scan_hot_zone && ksm_scan.seqnr == 1)
+		if(scan_hot_zone)
 			goto scan_hot;
-		if(scan_remain && ksm_scan.seqnr == 1)
+		if(scan_remain)
 			goto scan_re;
 
 		/*
@@ -1941,29 +1952,13 @@ static void ksm_do_scan(unsigned int scan_npages)
 		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0)
 		{
-			cursor = NULL;
-			find = 0;
+			INIT_LIST_HEAD(&rmap_item->link);
 			rmap_item->number = 0;
 			rmap_item->unchanged = 0;
 			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
 			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
 			if(intable(rmap_item->gfn)) {
 				list_add(&rmap_item->link, &hot_zone_rmap);
-				/*
-				if(rmap_item->number == 1)
-					list_add(&rmap_item->link, &hot_zone_rmap);
-				else {
-					list_for_each_entry(cursor, &hot_zone_rmap, link) {
-						if(cursor->gfn == rmap_item->gfn) {
-							list_add(&rmap_item->link, &cursor->link);
-							find = 1;
-							break;
-						}
-					}
-					if(!find)
-						list_add(&rmap_item->link, &hot_zone_rmap);
-				}
-				*/
 				len1++;
 			}
 			else {
@@ -1976,13 +1971,15 @@ static void ksm_do_scan(unsigned int scan_npages)
 	}
 
 scan_hot:
-	if(scan_hot_zone)
+	if(scan_hot_zone) 
 		hot_zone_scan(&scan_npages);
 scan_re:
-	if(scan_remain)
+	if(scan_remain) 
 		remain_zone_scan(&scan_npages);
-
-	return;
+		if(clean) {
+			deletelist(&hot_zone_rmap);
+			deletelist(&remaining_rmap);
+		}
 }
 
 static int ksmd_should_run(void)
@@ -2008,8 +2005,8 @@ static int ksm_scan_thread(void *nothing)
 		mutex_unlock(&ksm_thread_mutex);
 
 		if(time_flag == 1) {
-			printk("Round: %lu Ksm Time: %lu us\n", ksm_scan.seqnr - 1, ksm_time);
-			printk("Round: %li Break Time: %lu us\n", ksm_scan.seqnr - 1, break_time);
+			printk("Round: %lu Ksm Time: %lu us\n", ksm_scan.seqnr, ksm_time);
+			printk("Round: %li Break Time: %lu us\n", ksm_scan.seqnr, break_time);
 			time_flag = 0;
 			ksm_time = 0;
 			break_time = 0;
@@ -2435,25 +2432,14 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return sprintf(buf, "%lu\n", ksm_run);
 }
 
-/* HZ KSM */
-static void deletelist(struct list_head *head)
-{
-	struct rmap_item *delete, *next;
-
-	list_for_each_entry_safe(delete, next, head, link) {
-		list_del(&delete->link);
-	}
-}
-
 /* HZ KSM clean */
 static void clean_gpa_node_list(void)
 {
 	struct list_head *head;
-
-	define_prescan = 0;
 	scan_hot_zone = 0;
 	scan_remain = 0;
 	ksm_time = 0, break_time = 0, time_flag = 0, print_vma = 0;
+	clean = 0;
 	cursor = NULL;
 
 	head = &hot_zone_rmap;
