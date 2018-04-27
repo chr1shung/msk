@@ -1974,12 +1974,13 @@ scan_hot:
 	if(scan_hot_zone) 
 		hot_zone_scan(&scan_npages);
 scan_re:
-	if(scan_remain) 
+	if(scan_remain) {
 		remain_zone_scan(&scan_npages);
 		if(clean) {
 			deletelist(&hot_zone_rmap);
 			deletelist(&remaining_rmap);
 		}
+	}
 }
 
 static int ksmd_should_run(void)
