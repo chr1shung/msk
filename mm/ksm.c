@@ -205,8 +205,11 @@ struct rmap_item *cursor = NULL;
 
 /* For time analysis */
 struct timeval before, after;
+struct timeval b1, b2, a1, a2;
 unsigned long ksm_time = 0;
 unsigned long break_time = 0;
+unsigned long cmp_time = 0;
+unsigned long next_time = 0;
 int time_flag = 0;
 
 /* debugging variable */
@@ -1664,6 +1667,25 @@ static void deletelist(struct list_head *head)
 	INIT_LIST_HEAD(head);
 }
 
+static void list_insert(struct rmap_item *rmap)
+{
+	unsigned long hva;
+
+	INIT_LIST_HEAD(&rmap->link);
+	rmap->number = 0;
+	rmap->unchanged = 0;
+	hva = rmap->address >> 12;		/* >> 12 so it's basically a page number */
+	rmap->gfn = kvm_hva_to_gfn(hva, &rmap->number);
+	if(intable(rmap->gfn)) {
+		list_add(&rmap->link, &hot_zone_rmap);
+		len1++;
+	}
+	else {
+		list_add(&rmap->link, &remaining_rmap);
+		len2++;
+	}
+}
+
 struct vm_area_struct *last_vma = NULL;
 static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 {
@@ -1766,6 +1788,7 @@ next_mm:
 				if (rmap_item) {
 					ksm_scan.rmap_list =
 							&rmap_item->rmap_list;
+					//list_insert(rmap_item);
 					ksm_scan.address += PAGE_SIZE;
 				} else
 					put_page(*page);
@@ -1822,6 +1845,11 @@ next_mm:
 	ksm_scan.seqnr++;
 	if(ksm_scan.seqnr == 1) 
 		scan_hot_zone = 1;
+
+	printk("Round: %lu next Time: %lu us\n", ksm_scan.seqnr, next_time);
+	printk("Round: %lu cmp Time: %lu us\n", ksm_scan.seqnr, cmp_time);
+	next_time = 0;
+	cmp_time = 0;
 
 	/* dumping hotzone information */
 	/*
@@ -1903,6 +1931,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 			scan_remain = 0;
 			cursor = NULL;
 			clean = 1;
+			time_flag = 1;
 			ksm_scan.seqnr++;
 		}
 
@@ -1925,7 +1954,6 @@ static void ksm_do_scan(unsigned int scan_npages)
 {
 	struct rmap_item *rmap_item;
 	struct page *uninitialized_var(page);
-	unsigned long hva;
 
 	while (scan_npages-- && likely(!freezing(current))) {
 		cond_resched();
@@ -1945,28 +1973,24 @@ static void ksm_do_scan(unsigned int scan_npages)
 		}
 		*/
 		
+		do_gettimeofday(&b1);
 		rmap_item = scan_get_next_rmap_item(&page);
+		do_gettimeofday(&a1);
+		next_time += (a1.tv_sec - b1.tv_sec) * 1000 * 1000;
+		next_time += (a1.tv_usec - b1.tv_usec);
+
 		if (!rmap_item)
 			return;
 
 		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0)
-		{
-			INIT_LIST_HEAD(&rmap_item->link);
-			rmap_item->number = 0;
-			rmap_item->unchanged = 0;
-			hva = rmap_item->address >> 12;		/* >> 12 so it's basically a page number */
-			rmap_item->gfn = kvm_hva_to_gfn(hva, &rmap_item->number);
-			if(intable(rmap_item->gfn)) {
-				list_add(&rmap_item->link, &hot_zone_rmap);
-				len1++;
-			}
-			else {
-				list_add(&rmap_item->link, &remaining_rmap);
-				len2++;
-			}
-		}
+			list_insert(rmap_item);
+
+		do_gettimeofday(&b2);
 		cmp_and_merge_page(page, rmap_item);
+		do_gettimeofday(&a2);
+		cmp_time += (a2.tv_sec - b2.tv_sec) * 1000 * 1000;
+		cmp_time += (a2.tv_usec - b2.tv_usec);
 		put_page(page);
 	}
 
