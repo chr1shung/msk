@@ -1931,8 +1931,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 			scan_remain = 0;
 			cursor = NULL;
 			clean = 1;
-			time_flag = 1;
-			ksm_scan.seqnr++;
 		}
 
 		mm = rmap_item->mm;
@@ -2003,6 +2001,9 @@ scan_re:
 		if(clean) {
 			deletelist(&hot_zone_rmap);
 			deletelist(&remaining_rmap);
+			time_flag = 1;
+			ksm_scan.seqnr++;
+			clean = 0;
 		}
 	}
 }
