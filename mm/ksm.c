@@ -184,6 +184,7 @@ struct rmap_item {
 	};
 	struct mm_struct *mm;
 	unsigned long address;		/* + low bits used for flags below */
+	unsigned long oaddress;		/* address with unchanged low bits */
 	unsigned int oldchecksum;	/* when unstable */
 	unsigned int unchanged;		/* how many round checksum haven't chagned */
 	union {
@@ -210,7 +211,7 @@ unsigned long ksm_time = 0;
 unsigned long break_time = 0;
 unsigned long cmp_time = 0;
 unsigned long next_time = 0;
-int time_flag = 0;
+int log_flag = 0;
 
 /* debugging variable */
 int hit = 0; 
@@ -1553,7 +1554,7 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * add its rmap_item to the stable tree.
 			 */
 			/* HZ KSM */
-			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
+			if(scan_hot_zone && intable(rmap_item->gfn))
 				hit++;
 			lock_page(kpage);
 			/* add rmap_item into stable tree node's rmap_hlist */
@@ -1591,7 +1592,7 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 			 * The pages were successfully merged: insert new
 			 * node in the stable tree and add both rmap_items.
 			 */
-			if(ksm_scan.seqnr == 1 && intable(rmap_item->gfn))
+			if(scan_hot_zone && intable(rmap_item->gfn))
 				hit++;
 			lock_page(kpage);
 			stable_node = stable_tree_insert(kpage);
@@ -1695,7 +1696,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 	struct rmap_item *rmap_item;
 	int nid;
 
-	if (list_empty(&ksm_mm_head.mm_list))
+	if (list_empty(&ksm_mm_head.mm_list))	/* basically means there's no VM running */
 		return NULL;
 
 	slot = ksm_scan.mm_slot;
@@ -1719,7 +1720,7 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 		 * those moved out to the migrate_nodes list can accumulate:
 		 * so prune them once before each full scan.
 		 */
-		/*  not executed */
+		/* not execute */
 		if (!ksm_merge_across_nodes) {
 			struct stable_node *stable_node;
 			struct list_head *this, *next;
@@ -1738,14 +1739,14 @@ static struct rmap_item *scan_get_next_rmap_item(struct page **page)
 			root_unstable_tree[nid] = RB_ROOT;
 
 		spin_lock(&ksm_mmlist_lock);
-		slot = list_entry(slot->mm_list.next, struct mm_slot, mm_list);	 /* get next slot in the mm_slot's list */
-		ksm_scan.mm_slot = slot;	/* switch to another VM */
+		slot = list_entry(slot->mm_list.next, struct mm_slot, mm_list);	 /* get first slot in the mm_slot's list */
+		ksm_scan.mm_slot = slot;	/* switch to first VM */
 		spin_unlock(&ksm_mmlist_lock);
 		/*
 		 * Although we tested list_empty() above, a racing __ksm_exit
 		 * of the last mm on the list may have removed it since then.
 		 */
-		if (slot == &ksm_mm_head)
+		if (slot == &ksm_mm_head)	/* double check VMs exist or not */
 			return NULL;
 next_mm:
 		/* update cursor */
@@ -1788,7 +1789,7 @@ next_mm:
 				if (rmap_item) {
 					ksm_scan.rmap_list =
 							&rmap_item->rmap_list;
-					//list_insert(rmap_item);
+					rmap_item->oaddress = ksm_scan.address;
 					ksm_scan.address += PAGE_SIZE;
 				} else
 					put_page(*page);
@@ -1812,6 +1813,7 @@ next_mm:
 	remove_trailing_rmap_items(slot, ksm_scan.rmap_list);
 
 	spin_lock(&ksm_mmlist_lock);
+	/* switch to next VM */
 	ksm_scan.mm_slot = list_entry(slot->mm_list.next,
 						struct mm_slot, mm_list);
 	if (ksm_scan.address == 0) {
@@ -1843,13 +1845,10 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;
-	if(ksm_scan.seqnr == 1) 
+	if(ksm_scan.seqnr%2 == 1) {
+		root_unstable_tree[0] = RB_ROOT;
 		scan_hot_zone = 1;
-
-	printk("Round: %lu next Time: %lu us\n", ksm_scan.seqnr, next_time);
-	printk("Round: %lu cmp Time: %lu us\n", ksm_scan.seqnr, cmp_time);
-	next_time = 0;
-	cmp_time = 0;
+	}
 
 	/* dumping hotzone information */
 	/*
@@ -1858,7 +1857,7 @@ next_mm:
 		hotzone_show();	
 	}
 	*/
-	time_flag = 1;
+	log_flag = 1;
 	return NULL;
 }
 
@@ -1878,7 +1877,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	number = (*scan_npages + 1)*2;
 	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
 	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
-	
+
 		if(--number == 0)
 		{
 			cursor = rmap_item;
@@ -1888,8 +1887,14 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		if(list_is_last(&rmap_item->link, &hot_zone_rmap))
 		{
 			scan_hot_zone = 0;
-			scan_remain = 1;	
+			if(ksm_scan.seqnr == 1)
+				scan_remain = 1;	
 			cursor = NULL;
+		}
+
+		if((rmap_item->address & PAGE_MASK) == rmap_item->oaddress) {}
+		else {
+			rmap_item->address = rmap_item->oaddress;
 		}
 
 		mm = rmap_item->mm;
@@ -1919,7 +1924,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	number = *scan_npages + 1;
 	rmap_item = list_prepare_entry(rmap_item, &remaining_rmap, link);
 	list_for_each_entry_continue(rmap_item, &remaining_rmap, link) {
-		
+
 		if(--number == 0)
 		{
 			cursor = rmap_item;
@@ -1970,7 +1975,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			print_vma = 1;
 		}
 		*/
-		
+
 		do_gettimeofday(&b1);
 		rmap_item = scan_get_next_rmap_item(&page);
 		do_gettimeofday(&a1);
@@ -1983,6 +1988,8 @@ static void ksm_do_scan(unsigned int scan_npages)
 		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0)
 			list_insert(rmap_item);
+
+		//printk("Round#%lu, number = %d, gfn = %lu, addr = %lx, oaddr = %lx\n", ksm_scan.seqnr, rmap_item->number, rmap_item->gfn, rmap_item->address, rmap_item->oaddress);
 
 		do_gettimeofday(&b2);
 		cmp_and_merge_page(page, rmap_item);
@@ -1999,10 +2006,8 @@ scan_re:
 	if(scan_remain) {
 		remain_zone_scan(&scan_npages);
 		if(clean) {
-			deletelist(&hot_zone_rmap);
 			deletelist(&remaining_rmap);
-			time_flag = 1;
-			ksm_scan.seqnr++;
+			// ksm_scan.seqnr++;
 			clean = 0;
 		}
 	}
@@ -2030,12 +2035,15 @@ static int ksm_scan_thread(void *nothing)
 		ksm_time += (after.tv_usec - before.tv_usec);
 		mutex_unlock(&ksm_thread_mutex);
 
-		if(time_flag == 1) {
+		if(log_flag == 1) {
 			printk("Round: %lu Ksm Time: %lu us\n", ksm_scan.seqnr, ksm_time);
 			printk("Round: %li Break Time: %lu us\n", ksm_scan.seqnr, break_time);
-			time_flag = 0;
-			ksm_time = 0;
-			break_time = 0;
+			printk("Round: %lu next Time: %lu us\n", ksm_scan.seqnr, next_time);
+			printk("Round: %lu cmp Time: %lu us\n", ksm_scan.seqnr, cmp_time);
+			printk("hot size = %d, remaining size = %d, hit = %d\n", len1, len2, hit);
+			next_time = 0, cmp_time = 0, ksm_time = 0,  break_time = 0;
+			hit = 0;
+			log_flag = 0;
 		}
 
 		try_to_freeze();
@@ -2462,9 +2470,10 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 static void clean_gpa_node_list(void)
 {
 	struct list_head *head;
-	scan_hot_zone = 0;
-	scan_remain = 0;
-	ksm_time = 0, break_time = 0, time_flag = 0, print_vma = 0;
+	scan_hot_zone = 0, scan_remain = 0;
+	ksm_time = 0, break_time = 0, cmp_time = 0, next_time = 0;
+	log_flag = 0, print_vma = 0;
+	len1 = 0, len2 = 0, hit = 0;
 	clean = 0;
 	cursor = NULL;
 
@@ -2474,8 +2483,6 @@ static void clean_gpa_node_list(void)
 	deletelist(head);
 
 	printk("=============Some ending logs=============\n");
-	printk("hot size = %d,  remaining size = %d\n", len1, len2);
-	printk("Hit = %d\n", hit);
 }
 
 
