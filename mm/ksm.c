@@ -186,7 +186,6 @@ struct rmap_item {
 	unsigned long address;		/* + low bits used for flags below */
 	unsigned long oaddress;		/* address with unchanged low bits */
 	unsigned int oldchecksum;	/* when unstable */
-	unsigned int unchanged;		/* how many round checksum haven't chagned */
 	union {
 		struct rb_node node;	/* when node of unstable tree */
 		struct {		/* when listed from stable tree */
@@ -211,7 +210,7 @@ unsigned long ksm_time = 0;
 unsigned long break_time = 0;
 unsigned long cmp_time = 0;
 unsigned long next_time = 0;
-int log_flag = 0;
+int logging = 0;
 
 /* debugging variable */
 int hit = 0; 
@@ -1573,12 +1572,8 @@ static void cmp_and_merge_page(struct page *page, struct rmap_item *rmap_item)
 	 */
 	checksum = calc_checksum(page);
 	if (rmap_item->oldchecksum != checksum) {
-		rmap_item->unchanged = 0;
 		rmap_item->oldchecksum = checksum;
 		return;
-	}
-	else {
-		rmap_item->unchanged += 1;
 	}
 
 	tree_rmap_item =
@@ -1651,7 +1646,7 @@ static void hotzone_show(void)
 
 	printk("Start dumping hotzone information:\n");
 	list_for_each_entry(rmap_item, &hot_zone_rmap, link) {
-		printk("VM#%d, GFN = %lu, unchanged = %u\n", rmap_item->number, rmap_item->gfn, rmap_item->unchanged);
+		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
 	}
 	printk("=========Finish dumping hotzone information.=========\n");
 }
@@ -1674,10 +1669,9 @@ static void list_insert(struct rmap_item *rmap)
 
 	INIT_LIST_HEAD(&rmap->link);
 	rmap->number = 0;
-	rmap->unchanged = 0;
 	hva = rmap->address >> 12;		/* >> 12 so it's basically a page number */
 	rmap->gfn = kvm_hva_to_gfn(hva, &rmap->number);
-	if(intable(rmap->gfn)) {
+	if(intable(rmap->gfn) && rmap->number > 0) {
 		list_add(&rmap->link, &hot_zone_rmap);
 		len1++;
 	}
@@ -1857,7 +1851,7 @@ next_mm:
 		hotzone_show();	
 	}
 	*/
-	log_flag = 1;
+	logging = 1;
 	return NULL;
 }
 
@@ -1989,8 +1983,6 @@ static void ksm_do_scan(unsigned int scan_npages)
 		if(ksm_scan.seqnr == 0)
 			list_insert(rmap_item);
 
-		//printk("Round#%lu, number = %d, gfn = %lu, addr = %lx, oaddr = %lx\n", ksm_scan.seqnr, rmap_item->number, rmap_item->gfn, rmap_item->address, rmap_item->oaddress);
-
 		do_gettimeofday(&b2);
 		cmp_and_merge_page(page, rmap_item);
 		do_gettimeofday(&a2);
@@ -2007,7 +1999,6 @@ scan_re:
 		remain_zone_scan(&scan_npages);
 		if(clean) {
 			deletelist(&remaining_rmap);
-			// ksm_scan.seqnr++;
 			clean = 0;
 		}
 	}
@@ -2035,7 +2026,7 @@ static int ksm_scan_thread(void *nothing)
 		ksm_time += (after.tv_usec - before.tv_usec);
 		mutex_unlock(&ksm_thread_mutex);
 
-		if(log_flag == 1) {
+		if(logging == 1) {
 			printk("Round: %lu Ksm Time: %lu us\n", ksm_scan.seqnr, ksm_time);
 			printk("Round: %li Break Time: %lu us\n", ksm_scan.seqnr, break_time);
 			printk("Round: %lu next Time: %lu us\n", ksm_scan.seqnr, next_time);
@@ -2043,7 +2034,7 @@ static int ksm_scan_thread(void *nothing)
 			printk("hot size = %d, remaining size = %d, hit = %d\n", len1, len2, hit);
 			next_time = 0, cmp_time = 0, ksm_time = 0,  break_time = 0;
 			hit = 0;
-			log_flag = 0;
+			logging = 0;
 		}
 
 		try_to_freeze();
@@ -2472,7 +2463,7 @@ static void clean_gpa_node_list(void)
 	struct list_head *head;
 	scan_hot_zone = 0, scan_remain = 0;
 	ksm_time = 0, break_time = 0, cmp_time = 0, next_time = 0;
-	log_flag = 0, print_vma = 0;
+	logging = 0, print_vma = 0;
 	len1 = 0, len2 = 0, hit = 0;
 	clean = 0;
 	cursor = NULL;
