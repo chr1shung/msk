@@ -1633,6 +1633,7 @@ static struct rmap_item *get_next_rmap_item(struct mm_slot *mm_slot,
 		/* It has already been zeroed */
 		rmap_item->mm = mm_slot->mm;
 		rmap_item->address = addr;
+		rmap_item->number = 0;
 
 		rmap_item->rmap_list = *rmap_list;
 		*rmap_list = rmap_item;
@@ -1675,7 +1676,8 @@ static void list_insert(struct rmap_item *rmap)
 		list_add(&rmap->link, &hot_zone_rmap);
 		len1++;
 	}
-	else {
+	/* we don't want to scan remaining list after 2nd round */ 
+	else if(!intable(rmap->gfn) && ksm_scan.seqnr == 0) {
 		list_add(&rmap->link, &remaining_rmap);
 		len2++;
 	}
@@ -1839,7 +1841,7 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;
-	if(ksm_scan.seqnr%2 == 1) {
+	if(ksm_scan.seqnr >= 1) {
 		root_unstable_tree[0] = RB_ROOT;
 		scan_hot_zone = 1;
 	}
@@ -1980,7 +1982,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 			return;
 
 		/* store gfn, #vm in each rmap_item at first round */
-		if(ksm_scan.seqnr == 0)
+		if(ksm_scan.seqnr == 0 || rmap_item->number == 0)
 			list_insert(rmap_item);
 
 		do_gettimeofday(&b2);
