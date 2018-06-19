@@ -217,6 +217,7 @@ int hit = 0;
 int len1 = 0;
 int len2 = 0;
 int print_vma = 0;
+int flag = 0;
 
 #define SEQNR_MASK	0x0ff	/* low bits of unstable tree seqnr */
 #define UNSTABLE_FLAG	0x100	/* is a node of the unstable tree */
@@ -241,6 +242,7 @@ static struct mm_slot ksm_mm_head = {
 /* HZ */
 static LIST_HEAD(hot_zone_rmap);
 static LIST_HEAD(remaining_rmap);
+static int hot_table[1048576] = {0};
 
 static struct ksm_scan ksm_scan = {
 	.mm_slot = &ksm_mm_head,
@@ -1672,12 +1674,12 @@ static void list_insert(struct rmap_item *rmap)
 	rmap->number = 0;
 	hva = rmap->address >> 12;		/* >> 12 so it's basically a page number */
 	rmap->gfn = kvm_hva_to_gfn(hva, &rmap->number);
-	if(intable(rmap->gfn) && rmap->number > 0) {
+	if(hot_table[rmap->gfn] && rmap->number > 0) {
 		list_add(&rmap->link, &hot_zone_rmap);
 		len1++;
 	}
 	/* we don't want to scan remaining list after 2nd round */ 
-	else if(!intable(rmap->gfn) && ksm_scan.seqnr == 0) {
+	else if(!hot_table[rmap->gfn] && ksm_scan.seqnr == 0) {
 		list_add(&rmap->link, &remaining_rmap);
 		len2++;
 	}
@@ -1945,6 +1947,15 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	}
 }
 
+static void init_hot_table(int *arr)
+{
+	int i;
+
+	for(i = 0; i < size(); i++) {
+		arr[table[i]] = 1;
+	}
+}
+
 /**
  * ksm_do_scan  - the ksm scanner main worker function.
  * @scan_npages - number of pages we want to scan before we return.
@@ -1961,6 +1972,11 @@ static void ksm_do_scan(unsigned int scan_npages)
 			goto scan_hot;
 		if(scan_remain)
 			goto scan_re;
+		if(!flag) {
+			init_hot_table(hot_table);
+			flag = 1;
+		}
+
 
 		/*
 		if(print_vma == 0)
