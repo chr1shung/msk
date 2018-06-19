@@ -245,6 +245,7 @@ static struct mm_slot ksm_mm_head = {
 static LIST_HEAD(hot_zone_rmap);
 static LIST_HEAD(remaining_rmap);
 static TRANS_LIST_HEAD(trans_head, trans_log);
+static TRANS_LIST_HEAD(rtrans_head, rtrans_log);
 
 static struct ksm_scan ksm_scan = {
 	.mm_slot = &ksm_mm_head,
@@ -1682,7 +1683,7 @@ static void trans_insert(struct rmap_item *rmap)
 	}
 	/* we don't want to scan remaining list after 2nd round */ 
 	else if(!intable(rmap->gfn) && ksm_scan.seqnr == 0) {
-		list_add(&rmap->link, &remaining_rmap);
+		trans_list_add_tail(&rmap->tlink, &rtrans_head, &rtrans_log, rmap->gfn);
 		len2++;
 	}
 }
@@ -1941,40 +1942,6 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 	}
-
-	/*
-	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
-	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
-
-		if(--number == 0)
-		{
-			cursor = rmap_item;
-			break;
-		}
-
-		if(list_is_last(&rmap_item->link, &hot_zone_rmap))
-		{
-			scan_hot_zone = 0;
-			if(ksm_scan.seqnr == 1)
-				scan_remain = 1;	
-			cursor = NULL;
-		}
-
-		if((rmap_item->address & PAGE_MASK) == rmap_item->oaddress) {}
-		else {
-			rmap_item->address = rmap_item->oaddress;
-		}
-
-		mm = rmap_item->mm;
-		down_read(&mm->mmap_sem);
-		vma = find_vma(mm, rmap_item->address);
-		page = follow_page(vma, rmap_item->address, FOLL_GET);
-		up_read(&mm->mmap_sem);
-
-		cmp_and_merge_page(page, rmap_item);
-		put_page(page);
-	}
-	*/
 }
 
 static void remain_zone_scan(unsigned int *scan_npages)
@@ -1986,13 +1953,15 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	unsigned int number;
 
 	if(cursor == NULL)
-		rmap_item = list_first_entry(&remaining_rmap, struct rmap_item, link);
+		rmap_item = trans_first_entry(&rtrans_head, struct rmap_item, tlink);
 	else
 		rmap_item = cursor;
 
 	number = *scan_npages + 1;
-	rmap_item = list_prepare_entry(rmap_item, &remaining_rmap, link);
-	list_for_each_entry_continue(rmap_item, &remaining_rmap, link) {
+	rmap_item = trans_prepare_entry(rmap_item, &rtrans_head, tlink);
+	trans_list_for_each_entry_continue(rmap_item, &rtrans_head, tlink) {
+
+		printk("#VM = %d, gfn = %u\n", rmap_item->number, rmap_item->gfn);
 
 		if(--number == 0)
 		{
@@ -2000,7 +1969,7 @@ static void remain_zone_scan(unsigned int *scan_npages)
 			break;
 		}
 
-		if(list_is_last(&rmap_item->link, &remaining_rmap))
+		if(is_last(&rmap_item->tlink, &rtrans_head))
 		{
 			scan_remain = 0;
 			cursor = NULL;
