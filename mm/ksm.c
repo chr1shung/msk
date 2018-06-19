@@ -41,7 +41,9 @@
 #include <linux/time.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
+
 #include "table.h"
+#include "trans_list.h"
 
 #ifdef CONFIG_NUMA
 #define NUMA(x)		(x)
@@ -195,6 +197,7 @@ struct rmap_item {
 	};
 	struct hlist_node gfnhlist;    /* link into hlist of rmap_items hanging off that gpa_node */
 	struct list_head link;
+	struct trans_list_head tlink;
 };
 
 /* For hot zone */
@@ -241,6 +244,7 @@ static struct mm_slot ksm_mm_head = {
 /* HZ */
 static LIST_HEAD(hot_zone_rmap);
 static LIST_HEAD(remaining_rmap);
+static TRANS_LIST_HEAD(trans_head, trans_log);
 
 static struct ksm_scan ksm_scan = {
 	.mm_slot = &ksm_mm_head,
@@ -1664,6 +1668,25 @@ static void deletelist(struct list_head *head)
 	INIT_LIST_HEAD(head);
 }
 
+static void trans_insert(struct rmap_item *rmap)
+{
+	unsigned long hva;
+
+	INIT_TRANS_LIST_HEAD(&rmap->tlink);
+	rmap->number = 0;
+	hva = rmap->address >> 12;		/* >> 12 so it's basically a page number */
+	rmap->gfn = kvm_hva_to_gfn(hva, &rmap->number);
+	if(intable(rmap->gfn) && rmap->number > 0) {
+		trans_list_add_tail(&rmap->tlink, &trans_head, &trans_log, rmap->gfn);
+		len1++;
+	}
+	/* we don't want to scan remaining list after 2nd round */ 
+	else if(!intable(rmap->gfn) && ksm_scan.seqnr == 0) {
+		list_add(&rmap->link, &remaining_rmap);
+		len2++;
+	}
+}
+
 static void list_insert(struct rmap_item *rmap)
 {
 	unsigned long hva;
@@ -1681,6 +1704,17 @@ static void list_insert(struct rmap_item *rmap)
 		list_add(&rmap->link, &remaining_rmap);
 		len2++;
 	}
+}
+
+static int get_vm_number(void)
+{
+	int number = 0;
+	struct mm_slot *iter;
+
+	list_for_each_entry(iter, &ksm_mm_head.mm_list, mm_list) {
+		number++;
+	}
+	return number;
 }
 
 struct vm_area_struct *last_vma = NULL;
@@ -1841,6 +1875,8 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;
+	printk("#VM = %d\n", get_vm_number());
+
 	if(ksm_scan.seqnr >= 1) {
 		root_unstable_tree[0] = RB_ROOT;
 		scan_hot_zone = 1;
@@ -1866,11 +1902,47 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	unsigned int number;
 
 	if(cursor == NULL)
-		rmap_item = list_first_entry(&hot_zone_rmap, struct rmap_item, link);
+		rmap_item = trans_first_entry(&trans_head, struct rmap_item, tlink);
 	else
 		rmap_item = cursor;
 
 	number = (*scan_npages + 1)*2;
+
+	rmap_item = trans_prepare_entry(rmap_item, &trans_head, tlink);
+	trans_list_for_each_entry_continue(rmap_item, &trans_head, tlink) {
+
+		printk("#VM = %d, gfn = %u\n", rmap_item->number, rmap_item->gfn);
+
+		if(--number == 0)
+		{
+			cursor = rmap_item;
+			break;
+		}
+
+		if(is_last(&rmap_item->tlink, &trans_head))
+		{
+			scan_hot_zone = 0;
+			if(ksm_scan.seqnr == 1)
+				scan_remain = 1;	
+			cursor = NULL;
+		}
+
+		if((rmap_item->address & PAGE_MASK) == rmap_item->oaddress) {}
+		else {
+			rmap_item->address = rmap_item->oaddress;
+		}
+
+		mm = rmap_item->mm;
+		down_read(&mm->mmap_sem);
+		vma = find_vma(mm, rmap_item->address);
+		page = follow_page(vma, rmap_item->address, FOLL_GET);
+		up_read(&mm->mmap_sem);
+
+		cmp_and_merge_page(page, rmap_item);
+		put_page(page);
+	}
+
+	/*
 	rmap_item = list_prepare_entry(rmap_item, &hot_zone_rmap, link);
 	list_for_each_entry_continue(rmap_item, &hot_zone_rmap, link) {
 
@@ -1902,6 +1974,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		cmp_and_merge_page(page, rmap_item);
 		put_page(page);
 	}
+	*/
 }
 
 static void remain_zone_scan(unsigned int *scan_npages)
@@ -1983,7 +2056,7 @@ static void ksm_do_scan(unsigned int scan_npages)
 
 		/* store gfn, #vm in each rmap_item at first round */
 		if(ksm_scan.seqnr == 0 || rmap_item->number == 0)
-			list_insert(rmap_item);
+			trans_insert(rmap_item);
 
 		do_gettimeofday(&b2);
 		cmp_and_merge_page(page, rmap_item);
