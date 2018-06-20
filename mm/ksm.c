@@ -1909,7 +1909,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	else
 		rmap_item = cursor;
 
-	number = (*scan_npages + 1);
+	number = (*scan_npages + 1) * 2;
 
 	rmap_item = trans_prepare_entry(rmap_item, &trans_head, tlink);
 	trans_list_for_each_entry_continue(rmap_item, &trans_head, tlink) {
