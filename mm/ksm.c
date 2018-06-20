@@ -1679,7 +1679,7 @@ static void trans_insert(struct rmap_item *rmap)
 	rmap->number = 0;
 	hva = rmap->address >> 12;		/* >> 12 so it's basically a page number */
 	rmap->gfn = kvm_hva_to_gfn(hva, &rmap->number);
-	if(hot_table[rmap->gfn] && gfn->number > 0) {
+	if(hot_table[rmap->gfn] && rmap->number > 0) {
 		trans_list_add_tail(&rmap->tlink, &trans_head, &trans_log, rmap->gfn);
 		len1++;
 	}
@@ -1925,8 +1925,8 @@ static void hot_zone_scan(unsigned int *scan_npages)
 		if(is_last(&rmap_item->tlink, &trans_head))
 		{
 			scan_hot_zone = 0;
-			//if(ksm_scan.seqnr == 1)
-				//scan_remain = 1;	
+			if(ksm_scan.seqnr == 1)
+				scan_remain = 1;	
 			cursor = NULL;
 		}
 
