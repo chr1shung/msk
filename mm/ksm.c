@@ -217,7 +217,7 @@ int hit = 0;
 int len1 = 0;
 int len2 = 0;
 int print_vma = 0;
-int flag = 0;
+int init_table = 0;
 
 #define SEQNR_MASK	0x0ff	/* low bits of unstable tree seqnr */
 #define UNSTABLE_FLAG	0x100	/* is a node of the unstable tree */
@@ -351,6 +351,10 @@ static inline void free_rmap_item(struct rmap_item *rmap_item)
 {
 	ksm_rmap_items--;
 	rmap_item->mm = NULL;	/* debug safety */
+
+	rmap_item->link.prev->next = rmap_item->link.next;
+	rmap_item->link.next->prev = rmap_item->link.prev;
+
 	kmem_cache_free(rmap_item_cache, rmap_item);
 }
 
@@ -1884,6 +1888,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 
 		if(list_is_last(&rmap_item->link, &hot_zone_rmap))
 		{
+			hotzone_show();
 			scan_hot_zone = 0;
 			if(ksm_scan.seqnr == 1)
 				scan_remain = 1;	
@@ -1972,11 +1977,6 @@ static void ksm_do_scan(unsigned int scan_npages)
 			goto scan_hot;
 		if(scan_remain)
 			goto scan_re;
-		if(!flag) {
-			init_hot_table(hot_table);
-			flag = 1;
-		}
-
 
 		/*
 		if(print_vma == 0)
@@ -2015,10 +2015,12 @@ scan_hot:
 scan_re:
 	if(scan_remain) {
 		remain_zone_scan(&scan_npages);
+		/*
 		if(clean) {
 			deletelist(&remaining_rmap);
 			clean = 0;
 		}
+		*/
 	}
 }
 
@@ -2031,6 +2033,11 @@ static int ksm_scan_thread(void *nothing)
 {
 	set_freezable();
 	set_user_nice(current, 5);
+
+	if(!init_table) {
+		init_hot_table(hot_table);
+		init_table = 1;
+	}
 
 	while (!kthread_should_stop()) {
 		mutex_lock(&ksm_thread_mutex);
@@ -2478,7 +2485,7 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 /* HZ KSM clean */
 static void clean_gpa_node_list(void)
 {
-	struct list_head *head;
+	//struct list_head *head;
 	scan_hot_zone = 0, scan_remain = 0;
 	ksm_time = 0, break_time = 0, cmp_time = 0, next_time = 0;
 	logging = 0, print_vma = 0;
@@ -2486,10 +2493,10 @@ static void clean_gpa_node_list(void)
 	clean = 0;
 	cursor = NULL;
 
-	head = &hot_zone_rmap;
-	deletelist(head);
-	head = &remaining_rmap;
-	deletelist(head);
+	//head = &hot_zone_rmap;
+	//deletelist(head);
+	//head = &remaining_rmap;
+	//deletelist(head);
 
 	printk("=============Some ending logs=============\n");
 }
