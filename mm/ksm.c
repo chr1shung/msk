@@ -220,7 +220,7 @@ int hit = 0;
 int len1 = 0;
 int len2 = 0;
 int print_vma = 0;
-int flag = 0;
+int init_table = 0;
 
 #define SEQNR_MASK	0x0ff	/* low bits of unstable tree seqnr */
 #define UNSTABLE_FLAG	0x100	/* is a node of the unstable tree */
@@ -1653,7 +1653,7 @@ static void hotzone_show(void)
 	struct rmap_item *rmap_item;
 
 	printk("Start dumping hotzone information:\n");
-	list_for_each_entry(rmap_item, &hot_zone_rmap, link) {
+	trans_list_for_each_entry(rmap_item, &trans_head, tlink) {
 		printk("VM#%d, GFN = %lu\n", rmap_item->number, rmap_item->gfn);
 	}
 	printk("=========Finish dumping hotzone information.=========\n");
@@ -1878,7 +1878,6 @@ next_mm:
 		goto next_mm;
 
 	ksm_scan.seqnr++;
-	printk("#VM = %d\n", get_vm_number());
 
 	if(ksm_scan.seqnr >= 1) {
 		root_unstable_tree[0] = RB_ROOT;
@@ -1914,8 +1913,6 @@ static void hot_zone_scan(unsigned int *scan_npages)
 	rmap_item = trans_prepare_entry(rmap_item, &trans_head, tlink);
 	trans_list_for_each_entry_continue(rmap_item, &trans_head, tlink) {
 
-		printk("#VM = %d, gfn = %u\n", rmap_item->number, rmap_item->gfn);
-
 		if(--number == 0)
 		{
 			cursor = rmap_item;
@@ -1924,6 +1921,7 @@ static void hot_zone_scan(unsigned int *scan_npages)
 
 		if(is_last(&rmap_item->tlink, &trans_head))
 		{
+			hotzone_show();
 			scan_hot_zone = 0;
 			if(ksm_scan.seqnr == 1)
 				scan_remain = 1;	
@@ -1963,7 +1961,6 @@ static void remain_zone_scan(unsigned int *scan_npages)
 	rmap_item = trans_prepare_entry(rmap_item, &rtrans_head, tlink);
 	trans_list_for_each_entry_continue(rmap_item, &rtrans_head, tlink) {
 
-		printk("#VM = %d, gfn = %u\n", rmap_item->number, rmap_item->gfn);
 
 		if(--number == 0)
 		{
@@ -2014,10 +2011,6 @@ static void ksm_do_scan(unsigned int scan_npages)
 			goto scan_hot;
 		if(scan_remain)
 			goto scan_re;
-		if(!flag) {
-			init_hot_table(hot_table);
-			flag = 1;
-		}
 
 		/*
 		if(print_vma == 0)
@@ -2056,10 +2049,12 @@ scan_hot:
 scan_re:
 	if(scan_remain) {
 		remain_zone_scan(&scan_npages);
+		/*
 		if(clean) {
 			deletelist(&remaining_rmap);
 			clean = 0;
 		}
+		*/
 	}
 }
 
@@ -2072,6 +2067,11 @@ static int ksm_scan_thread(void *nothing)
 {
 	set_freezable();
 	set_user_nice(current, 5);
+
+	if(!init_table) {
+		init_hot_table(hot_table);
+		init_table = 1;
+	}
 
 	while (!kthread_should_stop()) {
 		mutex_lock(&ksm_thread_mutex);
@@ -2519,7 +2519,7 @@ static ssize_t run_show(struct kobject *kobj, struct kobj_attribute *attr,
 /* HZ KSM clean */
 static void clean_gpa_node_list(void)
 {
-	struct list_head *head;
+	//struct list_head *head;
 	scan_hot_zone = 0, scan_remain = 0;
 	ksm_time = 0, break_time = 0, cmp_time = 0, next_time = 0;
 	logging = 0, print_vma = 0;
@@ -2527,10 +2527,10 @@ static void clean_gpa_node_list(void)
 	clean = 0;
 	cursor = NULL;
 
-	head = &hot_zone_rmap;
-	deletelist(head);
-	head = &remaining_rmap;
-	deletelist(head);
+	//head = &hot_zone_rmap;
+	//deletelist(head);
+	//head = &remaining_rmap;
+	//deletelist(head);
 
 	printk("=============Some ending logs=============\n");
 }

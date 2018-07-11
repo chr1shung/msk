@@ -22,8 +22,16 @@ struct trans_list_log {
 #define trans_first_entry(ptr, type, member) \
     trans_entry((ptr)->next, type, member)
 
+#define trans_last_entry(ptr, type, member) \
+    trans_entry((ptr)->prev, type, member)
+
 #define trans_next_entry(pos, member) \
     trans_entry((pos)->member.next, typeof(*(pos)), member)
+
+#define trans_list_for_each_entry(pos, head, member)                 \
+    for(pos = trans_first_entry(head, typeof(*pos), member);    \
+        &pos->member != (head);                                 \
+        pos = trans_next_entry(pos, member))
 
 #define trans_prepare_entry(pos, head, member) \
     ((pos) ? : trans_entry(head, typeof(*pos), member))
